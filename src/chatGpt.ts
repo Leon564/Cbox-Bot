@@ -19,6 +19,10 @@ export class Gpt {
                     content:'responde con un maximo de 200 caracteres'
                 },
                 {
+                    role: 'system',
+                    content:'responde de la manera mas puntual y corta posible'
+                },
+                {
                     role: 'user',
                     content: message || ''
                 }

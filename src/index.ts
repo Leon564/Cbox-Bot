@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { login } from "./login";
 import { Gpt } from "./chatGpt";
 import { boxDetails } from "./boxDetails";
-import { sendMessage } from "./messages";
+import { sendMessage, toDomain } from "./messages";
 import { Queue } from "queue-typescript";
 
 class Bot {
@@ -67,21 +67,16 @@ class Bot {
 
     // Manejar los mensajes recibidos del servidor
     this.socket.on("message", async (data: WebSocket.Data) => {
-      const splitedData = data.toString().split("\t");
-      if (splitedData.length <= 1) return;
+      const { date, id, lvl, message, name } = toDomain(data);
 
-      const [n, id, date, name, lvl, x, message, y, z, id2, w, id3] =
-        splitedData;
-
-      console.log(`Mensaje recibido: ${message} de ${name} el ${date}`);
       if (
-        !message ||
-        !message.includes("bot") ||
-        message.slice(5).length < 2 ||
-        name === this.uname
+        !message ||     
+        !message.toLowerCase().includes("bot") &&
+        !message.toLowerCase().includes("@" + this.uname.toLowerCase())
       )
         return;
-
+       
+      console.log(`Mensaje recibido: ${message} de ${name} el ${date}`);
       const response = await this.gpt.chat(message);
       if (!response) return;
 
@@ -103,7 +98,7 @@ class Bot {
 
     // Manejar el cierre de la conexión
     this.socket.on("close", (code: number, reason: string) => {
-      console.log("Conexión cerrada:", code, reason);
+      console.log("Conexión cerrada:", code.toString(), reason);
       Bot.start();
     });
   }

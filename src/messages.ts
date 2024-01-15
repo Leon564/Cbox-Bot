@@ -1,24 +1,37 @@
+import { load } from "cheerio";
+import WebSocket from "ws";
+import he from "he";
+
 export type SendMessageOptions = {
   message: string;
   username: string;
   key: string;
   pic: string;
   boxId: string;
-    boxTag: string;
-    iframeUrl: string;
+  boxTag: string;
+  iframeUrl: string;
 };
+
+export type ToDomainResponse = {
+  id: string;
+  date: string;
+  name: string;
+  lvl: string;
+  message: string;
+};
+
 export const sendMessage = async ({
   key,
   message,
   pic,
   username,
-    boxId,
-    boxTag,
-    iframeUrl,
+  boxId,
+  boxTag,
+  iframeUrl,
 }: SendMessageOptions) => {
-    const baseUrl = iframeUrl?.split("?")[0];
+  const baseUrl = iframeUrl?.split("?")[0];
   fetch(
-    `${baseUrl}?sec=submit&boxid=${boxId||''}&boxtag=${boxTag||''}&_v=1063`,
+    `${baseUrl}?sec=submit&boxid=${boxId || ""}&boxtag=${boxTag || ""}&_v=1063`,
     {
       headers: {
         accept: "*/*",
@@ -35,8 +48,33 @@ export const sendMessage = async ({
         Referer: "https://www4.cbox.ws/",
         "Referrer-Policy": "origin",
       },
-      body: `aj=1063&lp=2529196&pst=${message?.substring(0, 300)}&key=${key}&fp=0&lid=55837&nme=${username}&pic=${pic}`,
+      body: `aj=1063&lp=2529196&pst=${message?.substring(
+        0,
+        300
+      )}&key=${key}&fp=0&lid=55837&nme=${username}&pic=${pic}`,
       method: "POST",
     }
-  ).then((res) => res.text()).then(console.log);
+  );
+  // .then((res) => res.text())
+  // .then(console.log);
 };
+
+export const toDomain = (data: WebSocket.Data): ToDomainResponse => {
+  const splitedData = data.toString().split("\t");
+  if (splitedData.length <= 1) return {} as ToDomainResponse;
+
+  const [n, id, date, name, lvl, x, message, y, z, id2, w, id3] = splitedData;
+  return {
+    id,
+    date,
+    name,
+    lvl,
+    message: cleanMessage(message),
+  };
+};
+
+function cleanMessage(message: string): string {
+  const text = he.decode(message);
+
+  return text.replace(/<[^>]*>/g, "");
+}

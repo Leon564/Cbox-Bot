@@ -21,6 +21,10 @@ export class Gpt {
                 {
                     role: 'system',
                     content:'responde de la manera mas puntual y corta posible'
+                },                
+                {
+                    role: 'system',
+                    content:'si alguien pregunta como ver algo, cambiar el idioma de los subtitulos o accion similar, responde diciendo que no tienes acceso a informacion sobre la app de Legion Anime'
                 },
                 {
                     role: 'user',

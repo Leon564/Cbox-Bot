@@ -5,11 +5,11 @@ import { login } from "./login";
 import { Gpt } from "./chatGpt";
 import { boxDetails } from "./boxDetails";
 import { sendMessage, toDomain } from "./messages";
-import { Queue } from "queue-typescript";
 
 class Bot {
-  private responseQueue: Queue<any> = new Queue<any>();
-  private canSend: boolean = true;
+  private responseQueue: any[] = [];
+  private lastSentTime: number = Date.now() - 20500;
+
   constructor(
     private uname: string,
     private ukey: string,
@@ -21,15 +21,15 @@ class Bot {
     private iframeUrl: string
   ) {
     setInterval(() => {
-      if (this.responseQueue.length > 0 && this.canSend) {
-        this.canSend = false;
-        const response = this.responseQueue.dequeue();
+      if (
+        this.responseQueue.length > 0 &&
+        Date.now() - this.lastSentTime > 20500
+      ) {
+        const response = this.responseQueue.shift();
         sendMessage(response);
-        setTimeout(() => {
-          this.canSend = true;
-        }, 20000);
+        this.lastSentTime = Date.now();
       }
-    }, 20000);
+    }, 1000);
   }
 
   public static async start() {
@@ -70,17 +70,16 @@ class Bot {
       const { date, id, lvl, message, name } = toDomain(data);
 
       if (
-        !message ||     
-        !message.toLowerCase().includes("bot") &&
-        !message.toLowerCase().includes("@" + this.uname.toLowerCase())
+        !message ||
+        (!message.toLowerCase().includes("bot") &&
+          !message.toLowerCase().includes("@" + this.uname.toLowerCase()))
       )
         return;
-       
+
       console.log(`Mensaje recibido: ${message} de ${name} el ${date}`);
       const response = await this.gpt.chat(message);
       if (!response) return;
-
-      this.responseQueue.enqueue({
+      const responseData = {
         key: this.ukey,
         message: response,
         pic: this.pic,
@@ -88,7 +87,13 @@ class Bot {
         boxTag: this.boxTag,
         boxId: this.boxId,
         iframeUrl: this.iframeUrl,
-      });
+      };
+      if (Date.now() - this.lastSentTime < 20500) {
+        this.responseQueue.push(responseData);
+        return;
+      }
+      sendMessage(responseData);
+      this.lastSentTime = Date.now();
     });
     // Manejar errores en la conexión
     this.socket.on("error", (error: Error) => {

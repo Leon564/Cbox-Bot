@@ -16,7 +16,6 @@
     "dotenv": "^16.3.1",
     "he": "^1.2.0",
     "openai": "^4.24.4",
-    "queue-typescript": "^1.0.1",
     "ws": "^8.16.0"
   },
   "devDependencies": {

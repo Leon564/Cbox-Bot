@@ -72,7 +72,7 @@ class Bot {
       if (
         !message ||
         (!message.toLowerCase().includes("bot") &&
-          !message.toLowerCase().includes("@" + this.uname.toLowerCase()))
+          !message.toLowerCase().includes(this.uname.toLowerCase()))
       )
         return;
 

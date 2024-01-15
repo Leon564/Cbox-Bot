@@ -74,7 +74,12 @@ export const toDomain = (data: WebSocket.Data): ToDomainResponse => {
 };
 
 function cleanMessage(message: string): string {
-  const text = he.decode(message);
+  try {
+    const text = he.decode(message);
 
-  return text.replace(/<[^>]*>/g, "");
+    return text.replace(/<[^>]*>/g, "");
+  } catch (e) {
+    console.log(e);
+    return message;
+  }
 }

@@ -33,9 +33,18 @@ class Bot {
   }
 
   public static async start() {
+    
+    const { boxId, boxTag, iframeUrl, socketUrl } = await boxDetails(
+      process.env.CBOX_URL!
+    );
     const dataLogin = await login(
-      process.env.CBOX_USERNAME!,
-      process.env.CBOX_PASSWORD!
+    {
+      boxId: boxId!,
+      boxTag: boxTag!,
+      iframeUrl: iframeUrl!,
+      password: process.env.CBOX_PASSWORD!,
+      username: process.env.CBOX_USERNAME!,
+    }
     );
     if (dataLogin.error) {
       console.log("error al iniciar sesion");
@@ -43,9 +52,7 @@ class Bot {
       return;
     }
     const { nme, key, pic } = dataLogin.udata;
-    const { boxId, boxTag, iframeUrl, socketUrl } = await boxDetails(
-      process.env.CBOX_URL!
-    );
+    
     console.log(`starting bot as ${nme}`);
 
     new Bot(

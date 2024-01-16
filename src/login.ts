@@ -1,6 +1,28 @@
-export const login = async (username: string, password: string) => {
+export type LoginParams = {
+  username: string;
+  password: string;
+  boxId: string;
+  boxTag: string;
+  iframeUrl: string;
+};
+
+export const login = async ({
+  boxId,
+  boxTag,
+  iframeUrl,
+  password,
+  username,
+}: LoginParams) => {
+  const baseUrl = iframeUrl?.split("?")[0];
+  console.log(
+    `${baseUrl}?sec=profile&boxid=${boxId || ""}&boxtag=${
+      boxTag || ""
+    }&_v=1063&json=1`
+  );
   const response = await fetch(
-    "https://www4.cbox.ws/box/?sec=profile&boxid=4340037&boxtag=sinvpn&_v=1063&json=1",
+    `${baseUrl}?sec=profile&boxid=${boxId || ""}&boxtag=${
+      boxTag || ""
+    }&_v=1063&json=1`,
     {
       headers: {
         accept: "*/*",
@@ -20,8 +42,24 @@ export const login = async (username: string, password: string) => {
       method: "POST",
     }
   );
-  const data = await response.text();
+  const result = (await response.text()).slice(1);
+  const data = JSON.parse(result);
+  if (data.state && data.state === "CANNOT_REGISTER") {
+    return {
+      state: "LOGGED_IN",
+      auth_methods: [""],
+      udata: {
+        nme: username,
+        uid: undefined,
+        lvl: undefined,
+        url: "",
+        pic: undefined,
+        key: undefined,
+      },
+      message: "Not password required, you are logged in as %s.",
+      error: "",
+    };
+  }
 
-  return JSON.parse(data.slice(1));
+  return data;
 };
-

@@ -7,9 +7,13 @@ export class Gpt {
         private openai = new Openai({apiKey: process.env.OPENAI_API_KEY})
     ){}
 
-    async chat(message: string) {
+    async chat(message: string, botName?: string) {
         const gptResponse = await this.openai.chat.completions.create({
             messages:[
+                botName ? {
+                    role: 'system',
+                    content: `te llamas ${botName} y sabes todo sobre anime`
+                } : 
                 {
                     role: 'system',
                     content:'sabes todo sobre anime'
@@ -25,7 +29,8 @@ export class Gpt {
                 {
                     role: 'system',
                     content:'si alguien pregunta como ver algo, cambiar el idioma de los subtitulos o accion similar, responde diciendo que no tienes acceso a informacion sobre la app de Legion Anime'
-                },
+                }               
+                ,
                 {
                     role: 'user',
                     content: message || ''

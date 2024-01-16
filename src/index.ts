@@ -71,13 +71,15 @@ class Bot {
 
       if (
         !message ||
+        name === this.uname ||
         (!message.toLowerCase().includes("bot") &&
           !message.toLowerCase().includes(this.uname.toLowerCase()))
       )
         return;
 
       console.log(`Mensaje recibido: ${message} de ${name} el ${date}`);
-      const response = await this.gpt.chat(message);
+      
+      const response = await this.gpt.chat(message, this.uname);
       if (!response) return;
       const responseData = {
         key: this.ukey,

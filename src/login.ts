@@ -1,3 +1,6 @@
+import { HttpsProxyAgent } from "https-proxy-agent";
+import fetch from "node-fetch";
+
 export type LoginParams = {
   username: string;
   password: string;
@@ -14,6 +17,8 @@ export const login = async ({
   username,
 }: LoginParams) => {
   const baseUrl = iframeUrl?.split("?")[0];
+  const agent = new HttpsProxyAgent(process.env.HTTPS_PROXY!);
+  console.log("use agent", process.env.HTTPS_PROXY!);
   console.log(
     `${baseUrl}?sec=profile&boxid=${boxId || ""}&boxtag=${
       boxTag || ""
@@ -40,6 +45,7 @@ export const login = async ({
       },
       body: `n=${username}&k=&pword=${password}&pword2=&auth_prov=&auth_id=&do=login`,
       method: "POST",
+      agent,
     }
   );
   const result = (await response.text()).slice(1);

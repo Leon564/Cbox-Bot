@@ -2,6 +2,7 @@ import "dotenv/config";
 import path from "path";
 import fs from "fs";
 import { getLastMessages, getMemory, saveMemory } from "./utils";
+import { fetchSinopsis } from "./utils/web-search";
 
 export class Gpt {
   constructor(
@@ -33,6 +34,7 @@ export class Gpt {
       'si te preguntan quien te creo responde con "Leon564 pero aqui lo conocen como <@6851018|Sleepy Ash>" puedes agregarle mas detalles si lo deseas para que encaje con el contexto.',
       'si te piden un resumen del chat responde con "Generando resumen del chat... {{resumen}}"',
       `si crees que algo es importante para recordar al final de tu respuesta ponlo entre etiquetas las etiquetas <memory> </memory> como <memory>Esto es importante para recordar</memory>`,
+      `si te piden una sinopsis responde solo con <sinopsis> nombre del anime/manga/manhwa </sinopsis>`,
     ].join(" ");
 
     const context = await this.getContext();
@@ -87,6 +89,11 @@ export class Gpt {
           );
         }
         content = content.split("<memory>")[0].trim();
+      }
+
+      if (content.includes("<sinopsis>")) {
+        const sinopsis = await this.getSinopsis(content.split("<sinopsis>")[1].replace("</sinopsis>", "").trim());
+        content = sinopsis;
       }
 
       await this.saveContext({ question: message, answer: content || "" });
@@ -170,5 +177,54 @@ export class Gpt {
     } catch (error) {
       throw error;
     }
+  }
+
+  async getSinopsis(name: string) {
+    const sinopsis = await fetchSinopsis(name);
+
+    
+    
+    const url = `${this.apiUrl}?key=${process.env.GEMINI_API_KEY}`;
+    const payload = {
+      contents: [
+        {
+          parts: [
+            {
+              text: `system:Responde con un resumen del chat y dividelo cada ${process.env.MAX_LENGTH_RESPONSE} caracteres con {{skip}} para dividir el resumen en partes.
+              \n\nTu nombre es ${process.env.CBOX_USERNAME}, cuando lo veas en el resumen habla de ti en primera persona. 
+              \n\nOmite el ultimo mensaje donde se te pida el resumen ya que es el que estas haciendo en este momento pero puedes mencionar los anteriores.
+            \n----------\n
+            context:[${sinopsis}]
+            \n----------\n
+            user:resume esta sinopsis, si no hay sinopsis responde con "Sinopsis no encontrada"`,
+            },
+          ],
+        },
+      ],
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const candidates = data?.candidates || [];
+      const content = candidates[0]?.content?.parts?.[0]?.text;
+
+      return content || "No response from Gemini.";
+    } catch (error) {
+      throw error;
+    }
+  
   }
 }

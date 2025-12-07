@@ -38,10 +38,11 @@ MODERATION_ONLY_MODE = true
 ```
 - ✅ Modera contenido inapropiado
 - ✅ Elimina mensajes automáticamente
-- ❌ No responde a comandos
-- ❌ No chatea con usuarios
-- ❌ No envía advertencias públicas
-- 🤐 **Funciona de forma completamente silenciosa**
+- ✅ Envía advertencias por insultos/irrespeto
+- ❌ No responde a comandos de música
+- ❌ No responde a comandos de usuarios online
+- ❌ No chatea en conversaciones normales
+- 🎯 **Solo interviene para moderar comportamiento inapropiado**
 
 ### 3. **Solo Chat** (Sin moderación)
 ```env
@@ -58,10 +59,10 @@ MODERATION_ONLY_MODE = false
 ## 🎯 ¿Cuándo usar cada modo?
 
 ### Moderador Silencioso
-- **Ideal para:** Chats donde ya hay moderadores humanos
-- **Ventaja:** No interrumpe la conversación con advertencias
-- **Función:** Solo elimina contenido realmente problemático
-- **Log:** Todos los eventos se registran en consola para revisión
+- **Ideal para:** Chats donde ya hay moderadores humanos para funcionalidades
+- **Ventaja:** Solo se enfoca en mantener el respeto, no distrae con comandos
+- **Función:** Elimina insultos y envía advertencias educativas
+- **Comportamiento:** No responde a música/comandos, solo modera comportamiento
 
 ### Bot Completo
 - **Ideal para:** Chats sin moderadores humanos activos

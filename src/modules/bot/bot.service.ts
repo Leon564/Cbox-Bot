@@ -188,8 +188,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
             deleteMessageFunction
           );
           
-          // SOLO enviar advertencia si NO está en modo solo moderación
-          if (warningMessage && !moderationOnlyMode) {
+          // Enviar advertencia si hay una (incluso en modo solo moderación)
+          if (warningMessage) {
             const textColor = this.configService.get<string>('bot.textColor');
             const colorPrefix = textColor ? `^#${textColor} ` : '';
             

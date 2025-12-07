@@ -20,6 +20,10 @@ export default () => ({
     maxLengthResponse: parseInt(process.env.MAX_LENGTH_RESPONSE || '200', 10),
     textColor: process.env.TEXT_COLOR,
     useMemory: process.env.USE_MEMORY === 'true',
+    moderationEnabled: process.env.MODERATION_ENABLED === 'true',
+    autoModerateAll: process.env.AUTO_MODERATE_ALL === 'true',
+    autoDeleteMessages: process.env.AUTO_DELETE_MESSAGES === 'true',
+    moderationOnlyMode: process.env.MODERATION_ONLY_MODE === 'true',
   },
   
   // Music Configuration

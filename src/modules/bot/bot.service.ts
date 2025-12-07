@@ -6,6 +6,7 @@ import { AuthService } from '../auth/auth.service';
 import { ChatService } from '../chat/chat.service';
 import { MessagesService } from '../chat/messages.service';
 import { OnlineUsersService } from '../chat/online-users.service';
+import { ModerationService } from '../chat/moderation.service';
 import { MusicService } from '../music/music.service';
 import { UtilsService } from '../../common/utils/utils.service';
 import { LoggingService } from '../../common/utils/logging.service';
@@ -26,6 +27,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly chatService: ChatService,
     private readonly messagesService: MessagesService,
     private readonly onlineUsersService: OnlineUsersService,
+    private readonly moderationService: ModerationService,
     private readonly musicService: MusicService,
     private readonly utilsService: UtilsService,
     private readonly loggingService: LoggingService,
@@ -142,14 +144,91 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Debug: mostrar nombre limpio vs nombre del bot
     console.log(`🔍 Comparando nombres: "${name}" vs "${this.session.uname}"`);
 
-    // Solo guardar mensajes que NO sean del bot para evitar ciclos recursivos en resúmenes
-    if (name && message && name !== this.session.uname) {
-      await this.loggingService.saveLog(name, message);
-    } else if (name === this.session.uname && message) {
-      // Log cuando se excluye un mensaje del bot (solo para debugging)
-      console.log(`🚫 Mensaje del bot excluido del log: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`);
-      // CRÍTICO: No procesar mensajes del propio bot
+    // CRÍTICO: No procesar mensajes del propio bot
+    if (name === this.session.uname) {
+      console.log(`🚫 Mensaje del bot excluido del procesamiento: "${message?.substring(0, 50)}${message && message.length > 50 ? '...' : ''}"`);
       return;
+    }
+
+    // Verificar si está en modo SOLO MODERACIÓN
+    const moderationOnlyMode = this.configService.get<boolean>('bot.moderationOnlyMode');
+    
+    // MODERACIÓN AUTOMÁTICA - Procesar TODOS los mensajes (comandos y no comandos)
+    const autoModerateAll = this.configService.get<boolean>('bot.autoModerateAll');
+    if (autoModerateAll && name && message) {
+      console.log(`🛡️ [AUTO-MOD] Moderando mensaje de ${name}...`);
+      
+      try {
+        const moderationResult = await this.moderationService.moderateMessage(
+          message, 
+          name, 
+          parseInt(lvl?.toString() || '1', 10)
+        );
+
+        if (!moderationResult.isAllowed) {
+          console.log(`🚫 [MOD] Mensaje bloqueado de ${name}: ${moderationResult.reason}`);
+          
+          // Crear función de eliminación para pasar al servicio de moderación
+          const deleteMessageFunction = async (messageId: string): Promise<boolean> => {
+            return await this.messagesService.deleteMessage({
+              key: this.session.ukey,
+              messageId: messageId,
+              username: this.session.uname,
+              boxId: this.session.boxId,
+              boxTag: this.session.boxTag,
+              iframeUrl: this.session.iframeUrl,
+            });
+          };
+          
+          // Ejecutar acción de moderación (enviar advertencia y/o eliminar mensaje si es necesario)
+          const warningMessage = await this.moderationService.executeModeration(
+            moderationResult, 
+            name, 
+            id,
+            deleteMessageFunction
+          );
+          
+          // SOLO enviar advertencia si NO está en modo solo moderación
+          if (warningMessage && !moderationOnlyMode) {
+            const textColor = this.configService.get<string>('bot.textColor');
+            const colorPrefix = textColor ? `^#${textColor} ` : '';
+            
+            await this.sendMessageWithSessionCheck({
+              message: `${colorPrefix}${warningMessage}`,
+              username: this.session.uname,
+              key: this.session.ukey,
+              pic: this.session.pic,
+              boxTag: this.session.boxTag,
+              boxId: this.session.boxId,
+              iframeUrl: this.session.iframeUrl,
+            });
+          }
+          
+          // IMPORTANTE: Terminar procesamiento aquí para mensajes bloqueados
+          return;
+        }
+        
+        console.log(`✅ [MOD] Mensaje aprobado de ${name}`);
+      } catch (error) {
+        console.error('❌ [MOD] Error en moderación automática:', error);
+        // Continuar con el procesamiento normal en caso de error de moderación
+      }
+    }
+
+    // Si está en modo SOLO MODERACIÓN, no procesar comandos ni responder
+    if (moderationOnlyMode) {
+      console.log(`🤐 [SILENT-MOD] Modo solo moderación activo - no procesando comandos`);
+      
+      // Solo guardar el log y terminar
+      if (name && message) {
+        await this.loggingService.saveLog(name, message);
+      }
+      return;
+    }
+
+    // Solo guardar mensajes que NO sean del bot para evitar ciclos recursivos en resúmenes
+    if (name && message) {
+      await this.loggingService.saveLog(name, message);
     }
 
     // Función auxiliar para verificar si el mensaje contiene el nombre exacto del bot
@@ -178,7 +257,6 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     
     if (
       !message ||
-      name === this.session.uname ||
       (!containsBotWord(message) && !containsExactBotName(message, this.session.uname) && !isMusicRequest && !isOnlineUsersRequest)
     )
       return;
@@ -359,6 +437,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         console.error('Error en debug online:', error);
       }
     }
+
+    if (message.toLowerCase().includes('moderation') || message.toLowerCase().includes('mod')) {
+      const moderationStats = this.moderationService.getModerationStats();
+      const autoModerateAll = this.configService.get<boolean>('bot.autoModerateAll');
+      const autoDeleteMessages = this.configService.get<boolean>('bot.autoDeleteMessages');
+      const moderationOnlyMode = this.configService.get<boolean>('bot.moderationOnlyMode');
+      
+      let statusText = `🛡️ Moderación: ${moderationStats.enabled ? 'Habilitada' : 'Deshabilitada'}`;
+      statusText += `\n📊 Auto-moderar todo: ${autoModerateAll ? 'Sí' : 'No'}`;
+      statusText += `\n🗑️ Auto-eliminar mensajes: ${autoDeleteMessages ? 'Sí' : 'No'}`;
+      statusText += `\n🤐 Modo solo moderación: ${moderationOnlyMode ? 'Sí' : 'No'}`;
+      statusText += `\n🤖 Modelo: ${moderationStats.model}`;
+      statusText += `\n📈 Estado: ${moderationStats.status}`;
+      
+      // Si incluye "toggle" cambiar el estado
+      if (message.toLowerCase().includes('toggle')) {
+        const newState = !moderationStats.enabled;
+        this.moderationService.setModerationEnabled(newState);
+        statusText += `\n🔄 Moderación ${newState ? 'habilitada' : 'deshabilitada'}`;
+      }
+      
+      const debugResponse = {
+        message: `${colorPrefix}<@${name}> ${statusText}`,
+        username: this.session.uname,
+        key: this.session.ukey,
+        pic: this.session.pic,
+        boxTag: this.session.boxTag,
+        boxId: this.session.boxId,
+        iframeUrl: this.session.iframeUrl,
+      };
+      await this.sendMessageWithSessionCheck(debugResponse);
+    }
+    
     // Agregar más comandos de debug según sea necesario
   }
 

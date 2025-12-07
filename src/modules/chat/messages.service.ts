@@ -82,8 +82,8 @@ export class MessagesService {
     const splitedData = data.toString().split('\t');
     if (splitedData.length <= 1) return {} as MessageData;
 
-    const [n, id, date, name, lvl, x, message, y, z, id2, w, id3] = splitedData;
-    
+    const [id, dataTime, date, name, lvl, x, message, y, z, id2, w, id3] = splitedData;
+    console.log(`📝 [RAW MESSAGE] Datos recibidos:`, splitedData);
     return {
       id,
       date,
@@ -100,6 +100,61 @@ export class MessagesService {
     } catch (e) {
       console.log(e);
       return message;
+    }
+  }
+
+  /**
+   * Elimina un mensaje del chat
+   */
+  async deleteMessage({
+    key,
+    messageId,
+    username,
+    boxId,
+    boxTag,
+    iframeUrl,
+  }: {
+    key: string;
+    messageId: string;
+    username: string;
+    boxId: string;
+    boxTag: string;
+    iframeUrl: string;
+  }): Promise<boolean> {
+    console.log(`🗑️ [DELETE] Eliminando mensaje ID: ${messageId} por ${username}`);
+    
+    const baseUrl = iframeUrl?.split('?')[0];
+    
+    try {
+      const deleteUrl = `${baseUrl}?sec=delban&boxid=${boxId}&boxtag=${boxTag}&_v=1063&n=${encodeURIComponent(username)}&k=${key}&del=${messageId}`;
+      console.log(`🗑️ [DELETE] URL de eliminación: ${deleteUrl}`);
+      const response = await fetch(deleteUrl, {
+        method: 'GET',
+        headers: {
+          'accept': '*/*',
+          'accept-language': 'es-419,es;q=0.9,es-ES;q=0.8,en;q=0.7,en-GB;q=0.6,en-US;q=0.5,es-US;q=0.4',
+          'priority': 'u=1, i',
+          'referer': baseUrl || '',
+          'sec-ch-ua': '"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-origin',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0'
+        }
+      });
+      console.log(`🗑️ [DELETE] Respuesta de eliminación: ${response.statusText}`);
+      if (response.ok) {
+        console.log(`✅ [DELETE] Mensaje ${messageId} eliminado exitosamente`);
+        return true;
+      } else {
+        console.error(`❌ [DELETE] Error eliminando mensaje ${messageId}:`, response.statusText);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ [DELETE] Error inesperado eliminando mensaje ${messageId}:`, error);
+      return false;
     }
   }
 }

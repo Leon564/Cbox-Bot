@@ -122,12 +122,18 @@ RESPONDE EN FORMATO JSON:
   "action": "allow"/"warn"/"timeout"/"ban"
 }
 
+ACCIONES:
+- allow: Permitir el mensaje
+- warn: Solo advertencia (para casos menores)
+- timeout: Eliminar mensaje + advertencia (para insultos directos y spam)
+- ban: Eliminar mensaje + advertencia severa (para amenazas y discriminación)
+
 EJEMPLOS:
 - "Me gusta Naruto" → {"allowed": true, "severity": "low", "action": "allow"}
 - "hola" → {"allowed": true, "severity": "low", "action": "allow"}
 - "que aburrido esto" → {"allowed": true, "severity": "low", "action": "allow"}
 - "alguien ha visto la nueva película?" → {"allowed": true, "severity": "low", "action": "allow"}
-- "eres un idiota" → {"allowed": false, "severity": "medium", "reason": "Insulto directo", "category": "toxicity", "action": "warn"}
+- "eres un idiota" → {"allowed": false, "severity": "medium", "reason": "Insulto directo", "category": "toxicity", "action": "timeout"}
 - "SPAM SPAM SPAM SPAM" → {"allowed": false, "severity": "high", "reason": "Spam evidente", "category": "spam", "action": "timeout"}
 - "voy a matarte" → {"allowed": false, "severity": "high", "reason": "Amenaza directa", "category": "toxicity", "action": "ban"}`;
   }
@@ -223,7 +229,7 @@ EJEMPLOS:
     if (hasBannedWord) {
       return {
         isAllowed: false,
-        severity: 'high',
+        severity: 'medium',
         reason: 'Lenguaje inapropiado detectado',
         category: 'toxicity',
         action: userLevel >= 3 ? 'warn' : 'timeout'
@@ -271,7 +277,23 @@ EJEMPLOS:
 
     switch (result.action) {
       case 'warn':
-        return `⚠️ ${username}: ${result.reason}. Por favor, mantén el respeto en el chat.`;
+        // Si es un warning por toxicidad (insultos), eliminar el mensaje también
+        if (result.category === 'toxicity' && autoDeleteEnabled && messageId && deleteMessage) {
+          console.log(`🗑️ [MOD] Intentando eliminar mensaje ${messageId} (warn toxicity) - Auto-delete: ENABLED`);
+          try {
+            const deleted = await deleteMessage(messageId);
+            if (deleted) {
+              return `⚠️ ${username}: Mensaje eliminado - ${result.reason}. Por favor, mantén el respeto en el chat.`;
+            } else {
+              return `⚠️ ${username}: ${result.reason}. Por favor, mantén el respeto en el chat. (eliminación falló)`;
+            }
+          } catch (error) {
+            console.error(`❌ [MOD] Error eliminando mensaje ${messageId}:`, error);
+            return `⚠️ ${username}: ${result.reason}. Por favor, mantén el respeto en el chat. (error en eliminación)`;
+          }
+        } else {
+          return `⚠️ ${username}: ${result.reason}. Por favor, mantén el respeto en el chat.`;
+        }
         
       case 'timeout':
         // Intentar eliminar el mensaje solo si está habilitado y se proporcionó el ID y la función

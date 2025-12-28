@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as WebSocket from 'ws';
+import OpenAI from 'openai';
 import { AuthService } from '../auth/auth.service';
 import { MessagesService } from '../chat/messages.service';
 import { ModerationService } from '../chat/moderation.service';
@@ -16,6 +17,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private warningMessages: Set<string> = new Set(); // Para rastrear IDs de mensajes de advertencia
   private moderationPaused = false; // Estado de pausa de moderación
   private pauseEndTime: number | null = null; // Tiempo cuando termina la pausa
+  private openai: OpenAI; // Instancia de OpenAI para interpretar comandos
 
   constructor(
     private readonly configService: ConfigService,
@@ -23,7 +25,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly messagesService: MessagesService,
     private readonly moderationService: ModerationService,
     private readonly loggingService: LoggingService,
-  ) {}
+  ) {
+    // Inicializar OpenAI para interpretar comandos
+    this.openai = new OpenAI({
+      apiKey: this.configService.get<string>('openai.apiKey'),
+    });
+  }
 
   async onModuleInit() {
     console.log('🛡️ Inicializando Moderador Bot Service...');
@@ -138,11 +145,13 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
 
     // VERIFICAR COMANDOS DE MODERACIÓN (solo para admins/mods)
-    if (name && message && this.isModeratorCommand(message)) {
+    if (name && message) {
       const userLevel = this.getLevelName(parseInt(lvl?.toString() || '1', 10));
       if (userLevel === 'Adm' || userLevel === 'Mod') {
-        await this.handleModerationCommand(message, name, userLevel);
-        return; // No procesar más este mensaje
+        const commandResult = await this.interpretModerationCommand(message, name, userLevel);
+        if (commandResult) {
+          return; // No procesar más este mensaje
+        }
       }
     }
 
@@ -313,6 +322,131 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       console.error(`❌ Error eliminando advertencia ${messageId}:`, error);
+    }
+  }
+
+  /**
+   * Interpreta comandos de moderación usando GPT de forma dinámica
+   */
+  private async interpretModerationCommand(message: string, username: string, userLevel: string): Promise<boolean> {
+    try {
+      const systemPrompt = `Eres un intérprete de comandos para un bot de moderación. Analiza si el mensaje contiene una intención de controlar la moderación del chat.
+
+RESPONDE SOLO CON UNO DE ESTOS FORMATOS JSON:
+
+Para pausar moderación:
+{"action": "pause", "duration": NÚMERO, "unit": "minutes|hours", "reason": "motivo opcional"}
+
+Para reanudar moderación:
+{"action": "resume", "reason": "motivo opcional"}
+
+Para consultar estado:
+{"action": "status"}
+
+Para NO hacer nada (mensaje normal):
+{"action": "none"}
+
+EJEMPLOS DE MENSAJES QUE SÍ SON COMANDOS:
+- "pausa el bot 30 minutos" → {"action": "pause", "duration": 30, "unit": "minutes"}
+- "desactiva la moderación por 2 horas" → {"action": "pause", "duration": 2, "unit": "hours"}
+- "reactiva el bot" → {"action": "resume"}
+- "reanuda moderación" → {"action": "resume"}
+- "como está el bot?" → {"action": "status"}
+- "estado de moderación" → {"action": "status"}
+
+EJEMPLOS DE MENSAJES QUE NO SON COMANDOS:
+- "hola como están" → {"action": "none"}
+- "que opinan del anime" → {"action": "none"}
+- "alguien vio el episodio" → {"action": "none"}
+
+Analiza: "${message}"`;
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'system', content: systemPrompt }],
+        max_tokens: 150,
+        temperature: 0.1,
+      });
+
+      const result = response.choices[0]?.message?.content?.trim();
+      if (!result) return false;
+
+      console.log(`🤖 [GPT-COMMAND] Interpretación para "${message}": ${result}`);
+
+      const command = JSON.parse(result);
+      
+      if (command.action === 'none') {
+        return false; // No es un comando
+      }
+
+      return await this.executeInterpretedCommand(command, username, userLevel, message);
+
+    } catch (error) {
+      console.error('❌ Error interpretando comando con GPT:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Ejecuta el comando interpretado por GPT
+   */
+  private async executeInterpretedCommand(command: any, username: string, userLevel: string, originalMessage: string): Promise<boolean> {
+    console.log(`🎛️ [MOD-CONTROL] Comando GPT de ${username} (${userLevel}): ${JSON.stringify(command)}`);
+
+    switch (command.action) {
+      case 'pause':
+        const duration = command.duration || 30;
+        const unit = command.unit || 'minutes';
+        
+        let milliseconds: number;
+        if (unit === 'hours') {
+          milliseconds = duration * 60 * 60 * 1000;
+        } else {
+          milliseconds = duration * 60 * 1000;
+        }
+        
+        this.moderationPaused = true;
+        this.pauseEndTime = Date.now() + milliseconds;
+        
+        const timeText = unit === 'hours' ? `${duration} hora(s)` : `${duration} minuto(s)`;
+        const reason = command.reason ? ` (${command.reason})` : '';
+        
+        console.log(`⏸️ [MOD-CONTROL] Moderación PAUSADA por ${username} durante ${timeText}${reason}`);
+        
+        await this.sendModerationStatusMessage(
+          `🔴 Moderación PAUSADA por ${username} durante ${timeText}${reason}`
+        );
+        return true;
+
+      case 'resume':
+        this.moderationPaused = false;
+        this.pauseEndTime = null;
+        
+        const resumeReason = command.reason ? ` (${command.reason})` : '';
+        
+        console.log(`▶️ [MOD-CONTROL] Moderación REANUDADA por ${username}${resumeReason}`);
+        
+        await this.sendModerationStatusMessage(
+          `🟢 Moderación REANUDADA por ${username}${resumeReason}`
+        );
+        return true;
+
+      case 'status':
+        const status = this.moderationPaused ? 'PAUSADA' : 'ACTIVA';
+        let statusMessage = `📊 Estado de moderación: ${status}`;
+        
+        if (this.moderationPaused && this.pauseEndTime) {
+          const remainingMs = this.pauseEndTime - Date.now();
+          const remainingMin = Math.ceil(remainingMs / (60 * 1000));
+          statusMessage += ` (${remainingMin} min restantes)`;
+        }
+        
+        console.log(`📊 [MOD-CONTROL] Estado consultado por ${username}: ${status}`);
+        await this.sendModerationStatusMessage(statusMessage);
+        return true;
+
+      default:
+        return false;
     }
   }
 

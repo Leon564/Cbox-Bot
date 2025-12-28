@@ -13,6 +13,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private session!: BotSession;
   private socket!: WebSocket;
   private readonly SESSION_DURATION = 15 * 60 * 1000; // 15 minutos en milisegundos
+  private warningMessages: Set<string> = new Set(); // Para rastrear IDs de mensajes de advertencia
 
   constructor(
     private readonly configService: ConfigService,
@@ -117,6 +118,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // CRÍTICO: No procesar mensajes del propio bot
     if (name === this.session.uname) {
       console.log(`🚫 Mensaje del bot excluido del procesamiento: "${message?.substring(0, 50)}${message && message.length > 50 ? '...' : ''}"`);
+      
+      // Detectar si es un mensaje de advertencia y programar su eliminación
+      if (message && message.includes('🔇') && message.includes('Mensaje eliminado por')) {
+        this.scheduleWarningDeletion(id);
+      }
+      
       return;
     }
 
@@ -227,6 +234,58 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
     
     return true; // No necesita renovación
+  }
+
+  /**
+   * Programa la eliminación de un mensaje de advertencia después de 10 segundos
+   */
+  private scheduleWarningDeletion(messageId: string): void {
+    console.log(`⏰ Programando eliminación de advertencia ${messageId} en 10 segundos...`);
+    
+    setTimeout(async () => {
+      try {
+        await this.deleteMessage(messageId);
+        console.log(`✅ Mensaje de advertencia ${messageId} eliminado automáticamente`);
+      } catch (error) {
+        console.error(`❌ Error eliminando mensaje de advertencia ${messageId}:`, error);
+      }
+    }, 10000); // 10 segundos
+  }
+
+  /**
+   * Elimina un mensaje específico del chat
+   */
+  private async deleteMessage(messageId: string): Promise<void> {
+    try {
+      const sessionValid = await this.renewSessionIfNeeded();
+      if (!sessionValid) {
+        console.error('❌ No se pudo renovar la sesión para eliminar mensaje');
+        return;
+      }
+
+      const baseUrl = this.session.iframeUrl?.split('?')[0];
+      const deleteUrl = `${baseUrl}?sec=delban&boxid=${this.session.boxId}&boxtag=${this.session.boxTag}&_v=1063&n=${this.session.uname}&k=${this.session.ukey}&del=${messageId}`;
+      
+      console.log(`🗑️ [AUTO-DELETE] Eliminando advertencia ID: ${messageId}`);
+      
+      const response = await fetch(deleteUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      const result = await response.text();
+      console.log(`🗑️ [AUTO-DELETE] Respuesta: ${result}`);
+      
+      if (result.includes('OK') || result.includes('success')) {
+        console.log(`✅ [AUTO-DELETE] Advertencia ${messageId} eliminada exitosamente`);
+      } else {
+        console.log(`⚠️ [AUTO-DELETE] Respuesta inesperada para ${messageId}: ${result}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error eliminando advertencia ${messageId}:`, error);
+    }
   }
 
   private async sendMessageWithSessionCheck(messageData: any): Promise<void> {

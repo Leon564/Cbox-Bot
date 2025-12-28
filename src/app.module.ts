@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BotModule } from './modules/bot/bot.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { MusicModule } from './modules/music/music.module';
 import { AuthModule } from './modules/auth/auth.module';
 import configuration from './config/configuration';
 
@@ -17,7 +16,6 @@ import configuration from './config/configuration';
     ScheduleModule.forRoot(),
     BotModule,
     ChatModule,
-    MusicModule,
     AuthModule,
   ],
 })

@@ -24,12 +24,6 @@ export default () => ({
     autoModerateAll: process.env.AUTO_MODERATE_ALL === 'true',
     autoDeleteMessages: process.env.AUTO_DELETE_MESSAGES === 'true',
     moderationOnlyMode: process.env.MODERATION_ONLY_MODE === 'true',
-  },
-  
-  // Music Configuration
-  music: {
-    uploadService: process.env.UPLOAD_SERVICE || 'catbox',
-    litterboxExpiry: process.env.LITTERBOX_EXPIRY || '1h',
-    youtubeCookiesPath: process.env.YOUTUBE_COOKIES_PATH,
+    sendModerationWarnings: process.env.SEND_MODERATION_WARNINGS !== 'false',
   },
 });

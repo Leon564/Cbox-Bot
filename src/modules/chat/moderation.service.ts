@@ -8,12 +8,14 @@ interface ModerationResult {
   severity: 'low' | 'medium' | 'high';
   category?: string;
   action: 'allow' | 'warn' | 'timeout' | 'ban';
+  isPersonalInfo?: boolean; // Nueva propiedad para identificar información personal
 }
 
 @Injectable()
 export class ModerationService {
   private openai: OpenAI;
   private moderationEnabled: boolean;
+  private personalInfoProtectionEnabled: boolean;
 
   constructor(private readonly configService: ConfigService) {
     this.openai = new OpenAI({
@@ -21,6 +23,7 @@ export class ModerationService {
     });
     
     this.moderationEnabled = this.configService.get<boolean>('bot.moderationEnabled') ?? true;
+    this.personalInfoProtectionEnabled = this.configService.get<boolean>('bot.personalInfoProtection') ?? true;
   }
 
   /**
@@ -39,6 +42,22 @@ export class ModerationService {
         severity: 'low',
         action: 'allow'
       };
+    }
+
+    // PRIMERA VERIFICACIÓN: Detectar información personal sensible
+    if (this.personalInfoProtectionEnabled) {
+      const personalInfoCheck = this.detectPersonalInformation(message);
+      if (personalInfoCheck) {
+        console.log(`🚨 [PERSONAL-INFO] Información personal detectada de ${username}: ${personalInfoCheck.type}`);
+        return {
+          isAllowed: false,
+          severity: 'high',
+          reason: personalInfoCheck.reason,
+          category: 'personal_information',
+          action: 'timeout',
+          isPersonalInfo: true
+        };
+      }
     }
 
     try {
@@ -339,6 +358,125 @@ EJEMPLOS:
       default:
         return null;
     }
+  }
+
+  /**
+   * Detecta información personal sensible en el mensaje
+   */
+  private detectPersonalInformation(message: string): { type: string; reason: string } | null {
+    const lowerMessage = message.toLowerCase().replace(/\s+/g, ' ').trim();
+    
+    // Filtrar menciones legítimas del chat antes de verificar redes sociales
+    if (this.isJustChatMention(message)) {
+      return null; // No es información personal, es una mención normal del chat
+    }
+    
+    // Patrones para números de teléfono
+    const phonePatterns = [
+      /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/, // Formato XXX-XXX-XXXX
+      /\b\d{10,}\b/, // 10 o más dígitos seguidos
+      /\+\d{1,3}[-.\s]?\d{3,14}\b/, // Formato internacional
+      /\b\d{3}[-.\s]?\d{7,}\b/, // Formato general
+      /whatsapp|wsp|wa\.me/i, // Referencias a WhatsApp
+    ];
+
+    // Patrones para redes sociales (solo cuando hay contexto específico)
+    const socialMediaPatterns = [
+      // Solo detectar @usuario cuando hay contexto explícito de red social
+      /\b(instagram|insta|ig)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
+      /\b(twitter|x\.com)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
+      /\b(facebook|fb)[\s:]*[@/]?([a-zA-Z0-9._]{3,50})\b/i,
+      /\b(telegram|tg)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
+      /\b(discord)[\s:]*([\w.#]{3,50})\b/i,
+      /\b(tiktok|tt)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
+      /\b(youtube|yt)[\s:]*[@/]?([a-zA-Z0-9._]{3,50})\b/i,
+      /\b(snapchat|snap)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
+      // Detectar patrones obvios de compartir usuarios de redes sociales
+      /\b(sígueme|follow me|sigueme|add me|búscame|buscame)[\s\w]*[@]([a-zA-Z0-9._]{3,30})\b/i,
+      /\b[@]([a-zA-Z0-9._]{3,30})[\s]*(en|on|de)[\s]*(insta|ig|tiktok|twitter|facebook|fb|snap)\b/i,
+    ];
+
+    // Patrones para correos electrónicos
+    const emailPatterns = [
+      /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+    ];
+
+    // Verificar números de teléfono
+    for (const pattern of phonePatterns) {
+      if (pattern.test(lowerMessage)) {
+        return {
+          type: 'phone',
+          reason: 'Compartir números de teléfono'
+        };
+      }
+    }
+
+    // Verificar redes sociales
+    for (const pattern of socialMediaPatterns) {
+      if (pattern.test(lowerMessage)) {
+        return {
+          type: 'social_media',
+          reason: 'Compartir usuarios de redes sociales'
+        };
+      }
+    }
+
+    // Verificar correos electrónicos
+    for (const pattern of emailPatterns) {
+      if (pattern.test(lowerMessage)) {
+        return {
+          type: 'email',
+          reason: 'Compartir direcciones de correo electrónico'
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Determina si un mensaje contiene solo menciones legítimas del chat
+   * y no información de redes sociales
+   */
+  private isJustChatMention(message: string): boolean {
+    const lowerMessage = message.toLowerCase().trim();
+    
+    // Patrones que indican que es solo una mención normal del chat
+    const chatMentionPatterns = [
+      /^@\w+\s*$/, // Solo "@usuario" 
+      /^@\w+\s+\w{1,10}\s*$/, // "@usuario hola" (mensaje corto después de mención)
+      /^@\w+\s+(hola|hi|hey|como\s+estas|que\s+tal|buenas)\b/i, // Saludos
+      /^@\w+\s+(que|qué|como|cómo|donde|dónde|cuando|cuándo|por\s+qué)\b/i, // Preguntas
+    ];
+    
+    // Si coincide con patrones de mención normal del chat, no es información personal
+    for (const pattern of chatMentionPatterns) {
+      if (pattern.test(lowerMessage)) {
+        return true;
+      }
+    }
+    
+    // Si contiene palabras que indican compartir redes sociales, NO es solo mención del chat
+    const socialSharingKeywords = [
+      'sígueme', 'sigueme', 'follow', 'add me', 'búscame', 'buscame',
+      'instagram', 'insta', 'ig', 'tiktok', 'twitter', 'facebook', 'fb',
+      'telegram', 'discord', 'snapchat', 'snap', 'youtube', 'yt',
+      'mi usuario', 'mi cuenta', 'mi perfil', 'estoy en', 'me encuentras en'
+    ];
+    
+    const hasSocialKeywords = socialSharingKeywords.some(keyword => 
+      lowerMessage.includes(keyword)
+    );
+    
+    if (hasSocialKeywords) {
+      return false; // Contiene palabras de redes sociales, procesar como información personal
+    }
+    
+    // Si solo contiene una mención (@usuario) sin contexto de redes sociales, es mención del chat
+    const onlyMentionPattern = /^[^@]*@\w+[^@]*$/;
+    const hasMultipleMentions = (message.match(/@/g) || []).length > 1;
+    
+    return onlyMentionPattern.test(message) && !hasMultipleMentions;
   }
 
   /**

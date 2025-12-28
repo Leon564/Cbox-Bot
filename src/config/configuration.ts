@@ -22,5 +22,6 @@ export default () => ({
     autoDeleteMessages: process.env.AUTO_DELETE_MESSAGES === 'true',
     moderationOnlyMode: process.env.MODERATION_ONLY_MODE === 'true',
     sendModerationWarnings: process.env.SEND_MODERATION_WARNINGS !== 'false',
+    personalInfoProtection: process.env.PERSONAL_INFO_PROTECTION !== 'false',
   },
 });

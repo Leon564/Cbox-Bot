@@ -73,6 +73,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       console.log(`🛡️ Moderación automática: ${this.configService.get<boolean>('bot.autoModerateAll') ? 'ENABLED' : 'DISABLED'}`);
       console.log(`🗑️ Eliminación automática: ${this.configService.get<boolean>('bot.autoDeleteMessages') ? 'ENABLED' : 'DISABLED'}`);
       console.log(`⚠️ Advertencias públicas: ${this.configService.get<boolean>('bot.sendModerationWarnings') !== false ? 'ENABLED' : 'DISABLED'}`);
+      console.log(`🔒 Protección información personal: ${this.configService.get<boolean>('bot.personalInfoProtection') !== false ? 'ENABLED' : 'DISABLED'}`);
 
       // Inicializar WebSocket
       this.socket = new WebSocket(socketUrl!);

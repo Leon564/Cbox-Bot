@@ -14,6 +14,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private socket!: WebSocket;
   private readonly SESSION_DURATION = 15 * 60 * 1000; // 15 minutos en milisegundos
   private warningMessages: Set<string> = new Set(); // Para rastrear IDs de mensajes de advertencia
+  private moderationPaused = false; // Estado de pausa de moderación
+  private pauseEndTime: number | null = null; // Tiempo cuando termina la pausa
 
   constructor(
     private readonly configService: ConfigService,
@@ -133,6 +135,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Solo guardar el log del mensaje
     if (name && message) {
       await this.loggingService.saveLog(name, message);
+    }
+
+    // VERIFICAR COMANDOS DE MODERACIÓN (solo para admins/mods)
+    if (name && message && this.isModeratorCommand(message)) {
+      const userLevel = this.getLevelName(parseInt(lvl?.toString() || '1', 10));
+      if (userLevel === 'Adm' || userLevel === 'Mod') {
+        await this.handleModerationCommand(message, name, userLevel);
+        return; // No procesar más este mensaje
+      }
+    }
+
+    // Verificar si la moderación está pausada
+    if (this.moderationPaused) {
+      if (this.pauseEndTime && Date.now() >= this.pauseEndTime) {
+        // La pausa ha expirado, reanudar automáticamente
+        this.moderationPaused = false;
+        this.pauseEndTime = null;
+        console.log('⏰ [MOD-CONTROL] Pausa de moderación expirada - REANUDANDO automáticamente');
+        await this.sendModerationStatusMessage('🟢 Moderación REANUDADA automáticamente (tiempo expirado)');
+      } else {
+        console.log(`⏸️ [MOD-CONTROL] Moderación pausada - mensaje de ${name} no procesado`);
+        return; // No moderar mientras está pausado
+      }
     }
 
     // MODERACIÓN AUTOMÁTICA - Procesar TODOS los mensajes
@@ -289,6 +314,115 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       console.error(`❌ Error eliminando advertencia ${messageId}:`, error);
     }
+  }
+
+  /**
+   * Verifica si un mensaje es un comando de moderación
+   */
+  private isModeratorCommand(message: string): boolean {
+    const lowerMessage = message.toLowerCase().trim();
+    const commands = [
+      /^!pausar?\s+(moderacion|mod)\s*(\d+)?\s*(min|minutos|h|horas?)?/i,
+      /^!reanudar?\s+(moderacion|mod)/i,
+      /^!estado\s+(moderacion|mod)/i,
+    ];
+    
+    return commands.some(pattern => pattern.test(lowerMessage));
+  }
+
+  /**
+   * Convierte el nivel numérico a nombre
+   */
+  private getLevelName(level: number): string {
+    switch (level) {
+      case 5: return 'Adm';
+      case 4: return 'Adm';
+      case 3: return 'Mod';
+      case 2: return 'Reg+';
+      case 1: return 'Reg';
+      default: return 'Guest';
+    }
+  }
+
+  /**
+   * Maneja comandos de moderación de admins/mods
+   */
+  private async handleModerationCommand(message: string, username: string, userLevel: string): Promise<void> {
+    const lowerMessage = message.toLowerCase().trim();
+    
+    console.log(`🎛️ [MOD-CONTROL] Comando recibido de ${username} (${userLevel}): ${message}`);
+
+    // Comando: Pausar moderación
+    const pauseMatch = lowerMessage.match(/^!pausar?\s+(moderacion|mod)\s*(\d+)?\s*(min|minutos|h|horas?)?/i);
+    if (pauseMatch) {
+      const duration = parseInt(pauseMatch[2] || '30', 10);
+      const unit = pauseMatch[3]?.toLowerCase() || 'min';
+      
+      let milliseconds: number;
+      if (unit.startsWith('h')) {
+        milliseconds = duration * 60 * 60 * 1000; // horas a ms
+      } else {
+        milliseconds = duration * 60 * 1000; // minutos a ms
+      }
+      
+      this.moderationPaused = true;
+      this.pauseEndTime = Date.now() + milliseconds;
+      
+      const timeText = unit.startsWith('h') ? `${duration} hora(s)` : `${duration} minuto(s)`;
+      console.log(`⏸️ [MOD-CONTROL] Moderación PAUSADA por ${username} durante ${timeText}`);
+      
+      await this.sendModerationStatusMessage(
+        `🔴 Moderación PAUSADA por ${username} durante ${timeText}`
+      );
+      return;
+    }
+
+    // Comando: Reanudar moderación
+    if (/^!reanudar?\s+(moderacion|mod)/i.test(lowerMessage)) {
+      this.moderationPaused = false;
+      this.pauseEndTime = null;
+      
+      console.log(`▶️ [MOD-CONTROL] Moderación REANUDADA por ${username}`);
+      
+      await this.sendModerationStatusMessage(
+        `🟢 Moderación REANUDADA por ${username}`
+      );
+      return;
+    }
+
+    // Comando: Estado de moderación
+    if (/^!estado\s+(moderacion|mod)/i.test(lowerMessage)) {
+      const status = this.moderationPaused ? 'PAUSADA' : 'ACTIVA';
+      let statusMessage = `📊 Estado de moderación: ${status}`;
+      
+      if (this.moderationPaused && this.pauseEndTime) {
+        const remainingMs = this.pauseEndTime - Date.now();
+        const remainingMin = Math.ceil(remainingMs / (60 * 1000));
+        statusMessage += ` (${remainingMin} min restantes)`;
+      }
+      
+      console.log(`📊 [MOD-CONTROL] Estado consultado por ${username}: ${status}`);
+      await this.sendModerationStatusMessage(statusMessage);
+      return;
+    }
+  }
+
+  /**
+   * Envía un mensaje de estado de moderación
+   */
+  private async sendModerationStatusMessage(message: string): Promise<void> {
+    const textColor = this.configService.get<string>('bot.textColor');
+    const colorPrefix = textColor ? `^#${textColor} ` : '';
+    
+    await this.sendMessageWithSessionCheck({
+      message: `${colorPrefix}${message}`,
+      username: this.session.uname,
+      key: this.session.ukey,
+      pic: this.session.pic,
+      boxTag: this.session.boxTag,
+      boxId: this.session.boxId,
+      iframeUrl: this.session.iframeUrl,
+    });
   }
 
   private async sendMessageWithSessionCheck(messageData: any): Promise<void> {

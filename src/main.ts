@@ -13,7 +13,6 @@ async function bootstrap() {
   await app.init();
   
   logger.log('🤖 CBox Bot started successfully!');
-  logger.log(`Memory system: ${process.env.USE_MEMORY === 'true' ? 'ENABLED' : 'DISABLED'}`);
   
   // Keep the application running
   process.on('SIGTERM', async () => {

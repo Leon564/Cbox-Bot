@@ -2,14 +2,38 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs';
-import { UtilsService } from './utils.service';
+import * as he from 'he';
 
 @Injectable()
 export class LoggingService {
   constructor(
     private readonly configService: ConfigService,
-    private readonly utilsService: UtilsService,
   ) {}
+
+  /**
+   * Limpia un mensaje removiendo etiquetas HTML y decodificando entidades
+   */
+  private cleanHtmlFromMessage(message: string): string {
+    try {
+      if (!message || typeof message !== 'string') {
+        return '';
+      }
+      
+      // Primero decodificar entidades HTML (&amp; -> &, &lt; -> <, etc.)
+      let cleanMessage = he.decode(message);
+      
+      // Luego remover todas las etiquetas HTML
+      cleanMessage = cleanMessage.replace(/<[^>]*>/g, '');
+      
+      // Limpiar espacios extra y caracteres de control
+      cleanMessage = cleanMessage.trim().replace(/\s+/g, ' ');
+      
+      return cleanMessage;
+    } catch (e) {
+      console.log('Error cleaning HTML from message:', e);
+      return message || '';
+    }
+  }
 
   async getLastMessages(): Promise<any[]> {
     const filePath = path.join(process.cwd(), 'data', 'messages_log.json');
@@ -40,8 +64,8 @@ export class LoggingService {
       : [];
     
     // Limpiar HTML tanto del usuario como del mensaje
-    const cleanUser = this.utilsService.cleanHtmlFromMessage(user);
-    const cleanMessage = this.utilsService.cleanHtmlFromMessage(message);
+    const cleanUser = this.cleanHtmlFromMessage(user);
+    const cleanMessage = this.cleanHtmlFromMessage(message);
     
     messagesLog.push({ user: cleanUser, message: cleanMessage });
     fs.writeFileSync(filePath, JSON.stringify(messagesLog.slice(-200)));
@@ -81,7 +105,7 @@ export class LoggingService {
       : [];
     
     // Limpiar HTML del usuario
-    const cleanUser = this.utilsService.cleanHtmlFromMessage(user);
+    const cleanUser = this.cleanHtmlFromMessage(user);
     
     eventsLog.push({ event, user: cleanUser, date: new Date().toISOString() });
     fs.writeFileSync(filePath, JSON.stringify(eventsLog.slice(-200)));

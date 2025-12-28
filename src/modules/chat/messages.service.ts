@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SendMessageOptions, MessageData } from '../../common/interfaces';
-import { UtilsService } from '../../common/utils/utils.service';
 import { load } from 'cheerio';
 import WebSocket from 'ws';
 import * as he from 'he';
@@ -10,7 +9,6 @@ import * as he from 'he';
 export class MessagesService {
   constructor(
     private readonly configService: ConfigService,
-    private readonly utilsService: UtilsService,
   ) {}
 
   async sendMessage({

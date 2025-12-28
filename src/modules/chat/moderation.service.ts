@@ -100,6 +100,7 @@ NO MODERES POR:
 5. ✅ Opiniones fuertes pero respetuosas
 6. ✅ Enlaces normales o recomendaciones
 7. ✅ Expresiones emocionales normales
+8. ✅ Apodos o nombres de usuario inofensivos (enana, gordo, etc.)
 
 NIVELES DE USUARIO:
 - Nivel 1: No registrado (moderación estricta)

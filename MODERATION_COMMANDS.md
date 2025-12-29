@@ -17,10 +17,12 @@ Solo usuarios con nivel **Moderador** (`Mod`) o **Administrador** (`Adm`) pueden
 **Ejemplos que funcionan:**
 - `pausa el bot 30 minutos`
 - `desactiva la moderación por 2 horas`
-- `bot para de moderar por 15 min`
-- `detén la moderación 1 hora`
-- `quita el bot por media hora`
+- `bot para de moderar por 1 día`
+- `detén la moderación 3 días`
+- `quita el bot por 1 semana`
 - `suspende moderación 45 minutos`
+- `pausa moderación por 12 horas`
+- `desactiva bot 2 días`
 
 ### ▶️ Reanudar Moderación
 
@@ -64,7 +66,7 @@ Solo usuarios con nivel **Moderador** (`Mod`) o **Administrador** (`Adm`) pueden
 
 **⏸️ Para pausar:**
 - Palabras clave: `pausa`, `desactiva`, `detén`, `suspende`, `para`
-- Tiempo: `30 min`, `2 horas`, `15 minutos`, `1h`, `media hora`
+- Tiempo: `30 min`, `2 horas`, `1 día`, `3 días`, `1 semana`, `15 minutos`
 - Objetivo: `bot`, `moderación`, `mod`
 
 **▶️ Para reanudar:**
@@ -87,22 +89,26 @@ Bot: 🔴 Moderación PAUSADA por Moderador durante 2 hora(s)
 Bot: 🟢 Moderación REANUDADA automáticamente (tiempo expirado)
 ```
 
-### Escenario 2: Emergencia
+### Escenario 2: Día libre
+```
+Admin: "pausa la moderación 1 día"
+Bot: 🤖 [GPT-COMMAND] Interpretación: {"action": "pause", "duration": 1, "unit": "days"}
+Bot: 🔴 Moderación PAUSADA por Admin durante 1 día(s)
+
+Admin: "estado del bot"
+Bot: 🤖 [GPT-COMMAND] Interpretación: {"action": "status"}
+Bot: � Estado de moderación: PAUSADA (18 hora(s) restantes)
+```
+
+### Escenario 3: Emergencia
 ```
 Admin: "bot para de moderar ya"
 Bot: 🤖 [GPT-COMMAND] Interpretación: {"action": "pause", "duration": 30, "unit": "minutes"}
-Bot: 🔴 Moderación PAUSADA por Admin durante 30 minuto(s)
+Bot: � Moderación PAUSADA por Admin durante 30 minuto(s)
 
 Admin: "reactiva moderación"
 Bot: 🤖 [GPT-COMMAND] Interpretación: {"action": "resume"}
 Bot: 🟢 Moderación REANUDADA por Admin
-```
-
-### Escenario 3: Consulta
-```
-Mod: "como está el bot?"
-Bot: 🤖 [GPT-COMMAND] Interpretación: {"action": "status"}
-Bot: 📊 Estado de moderación: ACTIVA
 ```
 
 ## 🛡️ Seguridad y Precisión

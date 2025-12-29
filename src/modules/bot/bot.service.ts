@@ -164,7 +164,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         console.log('⏰ [MOD-CONTROL] Pausa de moderación expirada - REANUDANDO automáticamente');
         await this.sendModerationStatusMessage('🟢 Moderación REANUDADA automáticamente (tiempo expirado)');
       } else {
-        console.log(`⏸️ [MOD-CONTROL] Moderación pausada - mensaje de ${name} no procesado`);
+        // Mostrar tiempo restante de forma más clara
+        const remainingMs = this.pauseEndTime ? this.pauseEndTime - Date.now() : 0;
+        const remainingTime = this.formatRemainingTime(remainingMs);
+        console.log(`⏸️ [MOD-CONTROL] Moderación pausada - mensaje de ${name} no procesado (${remainingTime} restantes)`);
         return; // No moderar mientras está pausado
       }
     }
@@ -335,7 +338,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 RESPONDE SOLO CON UNO DE ESTOS FORMATOS JSON:
 
 Para pausar moderación:
-{"action": "pause", "duration": NÚMERO, "unit": "minutes|hours", "reason": "motivo opcional"}
+{"action": "pause", "duration": NÚMERO, "unit": "minutes|hours|days|weeks", "reason": "motivo opcional"}
 
 Para reanudar moderación:
 {"action": "resume", "reason": "motivo opcional"}
@@ -349,10 +352,16 @@ Para NO hacer nada (mensaje normal):
 EJEMPLOS DE MENSAJES QUE SÍ SON COMANDOS:
 - "pausa el bot 30 minutos" → {"action": "pause", "duration": 30, "unit": "minutes"}
 - "desactiva la moderación por 2 horas" → {"action": "pause", "duration": 2, "unit": "hours"}
+- "pausa moderación 1 día" → {"action": "pause", "duration": 1, "unit": "days"}
+- "detén bot 3 días" → {"action": "pause", "duration": 3, "unit": "days"}
+- "para moderación 1 semana" → {"action": "pause", "duration": 1, "unit": "weeks"}
 - "reactiva el bot" → {"action": "resume"}
 - "reanuda moderación" → {"action": "resume"}
 - "como está el bot?" → {"action": "status"}
 - "estado de moderación" → {"action": "status"}
+
+UNIDADES VÁLIDAS: minutes, hours, days, weeks
+IMPORTANTE: Identifica correctamente la unidad de tiempo mencionada en el mensaje.
 
 EJEMPLOS DE MENSAJES QUE NO SON COMANDOS:
 - "hola como están" → {"action": "none"}
@@ -399,16 +408,31 @@ Analiza: "${message}"`;
         const unit = command.unit || 'minutes';
         
         let milliseconds: number;
-        if (unit === 'hours') {
-          milliseconds = duration * 60 * 60 * 1000;
-        } else {
-          milliseconds = duration * 60 * 1000;
+        let timeText: string;
+        
+        switch (unit) {
+          case 'weeks':
+            milliseconds = duration * 7 * 24 * 60 * 60 * 1000;
+            timeText = `${duration} semana(s)`;
+            break;
+          case 'days':
+            milliseconds = duration * 24 * 60 * 60 * 1000;
+            timeText = `${duration} día(s)`;
+            break;
+          case 'hours':
+            milliseconds = duration * 60 * 60 * 1000;
+            timeText = `${duration} hora(s)`;
+            break;
+          case 'minutes':
+          default:
+            milliseconds = duration * 60 * 1000;
+            timeText = `${duration} minuto(s)`;
+            break;
         }
         
         this.moderationPaused = true;
         this.pauseEndTime = Date.now() + milliseconds;
         
-        const timeText = unit === 'hours' ? `${duration} hora(s)` : `${duration} minuto(s)`;
         const reason = command.reason ? ` (${command.reason})` : '';
         
         console.log(`⏸️ [MOD-CONTROL] Moderación PAUSADA por ${username} durante ${timeText}${reason}`);
@@ -437,8 +461,20 @@ Analiza: "${message}"`;
         
         if (this.moderationPaused && this.pauseEndTime) {
           const remainingMs = this.pauseEndTime - Date.now();
-          const remainingMin = Math.ceil(remainingMs / (60 * 1000));
-          statusMessage += ` (${remainingMin} min restantes)`;
+          const remainingMinutes = Math.ceil(remainingMs / (60 * 1000));
+          const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+          const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+          
+          let timeRemaining: string;
+          if (remainingMs >= 24 * 60 * 60 * 1000) { // Más de 1 día
+            timeRemaining = `${remainingDays} día(s)`;
+          } else if (remainingMs >= 60 * 60 * 1000) { // Más de 1 hora
+            timeRemaining = `${remainingHours} hora(s)`;
+          } else { // Menos de 1 hora
+            timeRemaining = `${remainingMinutes} min`;
+          }
+          
+          statusMessage += ` (${timeRemaining} restantes)`;
         }
         
         console.log(`📊 [MOD-CONTROL] Estado consultado por ${username}: ${status}`);
@@ -577,6 +613,23 @@ Analiza: "${message}"`;
       
       // En caso de error, intentar renovar sesión para el próximo mensaje
       await this.renewSessionIfNeeded();
+    }
+  }
+
+  /**
+   * Formatea el tiempo restante en unidades legibles
+   */
+  private formatRemainingTime(milliseconds: number): string {
+    const minutes = Math.ceil(milliseconds / (60 * 1000));
+    const hours = Math.ceil(milliseconds / (60 * 60 * 1000));
+    const days = Math.ceil(milliseconds / (24 * 60 * 60 * 1000));
+    
+    if (milliseconds >= 24 * 60 * 60 * 1000) { // Más de 1 día
+      return `${days} día(s)`;
+    } else if (milliseconds >= 60 * 60 * 1000) { // Más de 1 hora
+      return `${hours} hora(s)`;
+    } else { // Menos de 1 hora
+      return `${minutes} min`;
     }
   }
 

@@ -121,7 +121,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   private async handleMessage(data: WebSocket.Data): Promise<void> {
     const { date, id, lvl, message, name } = this.messagesService.toDomain(data);
-    if(!name || !message || name.toLowerCase()=== 'aria') {
+    if(!name || !message || name?.toLowerCase()=== 'aria') {
       return;
     }
     // Debug: mostrar nombre limpio vs nombre del bot

@@ -16,6 +16,9 @@ export class ModerationService {
   private openai: OpenAI;
   private moderationEnabled: boolean;
   private personalInfoProtectionEnabled: boolean;
+  private userMessageHistory: Map<string, Array<{message: string, timestamp: number}>> = new Map();
+  private readonly CONTEXT_WINDOW_MS = 60000; // 1 minuto para analizar contexto
+  private readonly MAX_MESSAGES_TO_ANALYZE = 3; // Analizar últimos 3 mensajes del usuario
 
   constructor(private readonly configService: ConfigService) {
     this.openai = new OpenAI({
@@ -46,9 +49,13 @@ export class ModerationService {
 
     // PRIMERA VERIFICACIÓN: Detectar información personal sensible usando GPT
     if (this.personalInfoProtectionEnabled) {
-      const personalInfoCheck = await this.detectPersonalInformationWithGPT(message);
+      // Agregar mensaje actual al historial del usuario
+      this.addToUserHistory(username, message);
+      
+      // Analizar mensaje actual y contexto reciente
+      const personalInfoCheck = await this.detectPersonalInformationWithContext(username, message);
       if (personalInfoCheck) {
-        console.log(`🚨 [PERSONAL-INFO] Información personal detectada de ${username}: ${personalInfoCheck.type}`);
+        console.log(`🚨 [PERSONAL-INFO] Información personal detectada de ${username}: ${personalInfoCheck.type} - ${personalInfoCheck.context || 'mensaje único'}`);
         return {
           isAllowed: false,
           severity: 'high',
@@ -361,9 +368,130 @@ EJEMPLOS:
   }
 
   /**
+   * Agrega un mensaje al historial del usuario para análisis contextual
+   */
+  private addToUserHistory(username: string, message: string): void {
+    const now = Date.now();
+    
+    if (!this.userMessageHistory.has(username)) {
+      this.userMessageHistory.set(username, []);
+    }
+    
+    const userHistory = this.userMessageHistory.get(username)!;
+    
+    // Agregar mensaje actual
+    userHistory.push({ message, timestamp: now });
+    
+    // Limpiar mensajes antiguos (fuera del contexto temporal)
+    const filteredHistory = userHistory.filter(
+      entry => (now - entry.timestamp) <= this.CONTEXT_WINDOW_MS
+    );
+    
+    // Mantener solo los últimos N mensajes
+    const recentHistory = filteredHistory.slice(-this.MAX_MESSAGES_TO_ANALYZE);
+    
+    this.userMessageHistory.set(username, recentHistory);
+  }
+
+  /**
+   * Detecta información personal usando contexto de mensajes recientes
+   */
+  private async detectPersonalInformationWithContext(username: string, currentMessage: string): Promise<{ type: string; reason: string; context?: string } | null> {
+    try {
+      const userHistory = this.userMessageHistory.get(username) || [];
+      
+      // Si solo hay un mensaje, usar análisis simple
+      if (userHistory.length <= 1) {
+        const simpleCheck = await this.detectPersonalInformationWithGPT(currentMessage);
+        return simpleCheck;
+      }
+      
+      // Construir contexto de mensajes recientes
+      const recentMessages = userHistory
+        .map((entry, index) => `${index + 1}. "${entry.message}" (${Math.floor((Date.now() - entry.timestamp) / 1000)}s atrás)`)
+        .join('\n');
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Eres un detector avanzado de información personal que analiza SECUENCIAS DE MENSAJES para detectar spam fragmentado.
+
+Los usuarios pueden dividir información personal en múltiples mensajes para evitar detección:
+
+EJEMPLOS DE SPAM FRAGMENTADO:
+- Mensaje 1: "sígueme en facebook"
+- Mensaje 2: "@miusuario"
+= SPAM DETECTADO (compartir red social fragmentado)
+
+- Mensaje 1: "mi numero es"  
+- Mensaje 2: "123-456-7890"
+= SPAM DETECTADO (teléfono fragmentado)
+
+- Mensaje 1: "búscame en instagram"
+- Mensaje 2: "como @usuario123"  
+= SPAM DETECTADO (red social fragmentado)
+
+NO ES SPAM:
+- Mensaje 1: "hola @usuario"
+- Mensaje 2: "como estas"
+= Conversación normal
+
+- Mensaje 1: "@usuario tienes discord?"
+- Mensaje 2: "quiero preguntarte algo"
+= Pregunta legítima
+
+ANALIZA LA SECUENCIA COMPLETA y detecta si hay intención de compartir información personal (números, emails, usuarios de redes sociales) aunque esté dividida en múltiples mensajes.
+
+Responde SOLO en formato JSON:
+{
+  "isPersonalInfo": true/false,
+  "type": "phone"/"email"/"social_media"/"none",
+  "reason": "explicación del patrón detectado",
+  "context": "fragmentado"/"mensaje_unico"
+}`
+          },
+          {
+            role: 'user',
+            content: `Usuario: ${username}
+Secuencia de mensajes recientes:
+${recentMessages}
+
+¿Hay spam de información personal en esta secuencia?`
+          }
+        ],
+        max_tokens: 200,
+        temperature: 0.1
+      });
+
+      const result = response.choices[0]?.message?.content?.trim();
+      if (!result) return null;
+
+      const parsed = JSON.parse(result);
+      
+      if (parsed.isPersonalInfo && parsed.type !== 'none') {
+        console.log(`🤖 [GPT-CONTEXT] Spam fragmentado detectado: ${parsed.type} - ${parsed.reason}`);
+        return {
+          type: parsed.type,
+          reason: parsed.reason || 'Información personal fragmentada detectada',
+          context: parsed.context || 'fragmentado'
+        };
+      }
+
+      return null;
+      
+    } catch (error) {
+      console.error('❌ [GPT-CONTEXT] Error:', error);
+      // Fallback al análisis simple si el contextual falla
+      return await this.detectPersonalInformationWithGPT(currentMessage);
+    }
+  }
+
+  /**
    * Detecta información personal usando GPT para análisis más inteligente
    */
-  private async detectPersonalInformationWithGPT(message: string): Promise<{ type: string; reason: string } | null> {
+  private async detectPersonalInformationWithGPT(message: string): Promise<{ type: string; reason: string; context?: string } | null> {
     try {
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -409,7 +537,8 @@ Si no hay información personal sensible, responde: {"isPersonalInfo": false, "t
         console.log(`🤖 [GPT-PERSONAL-INFO] Detectado: ${parsed.type} - ${parsed.reason}`);
         return {
           type: parsed.type,
-          reason: parsed.reason || 'Información personal detectada'
+          reason: parsed.reason || 'Información personal detectada',
+          context: 'mensaje_unico'
         };
       }
 
@@ -425,7 +554,7 @@ Si no hay información personal sensible, responde: {"isPersonalInfo": false, "t
   /**
    * Detecta información personal sensible en el mensaje (método de respaldo)
    */
-  private detectPersonalInformation(message: string): { type: string; reason: string } | null {
+  private detectPersonalInformation(message: string): { type: string; reason: string; context?: string } | null {
     const lowerMessage = message.toLowerCase().replace(/\s+/g, ' ').trim();
     
     // Filtrar menciones legítimas del chat antes de verificar redes sociales
@@ -468,7 +597,8 @@ Si no hay información personal sensible, responde: {"isPersonalInfo": false, "t
       if (pattern.test(lowerMessage)) {
         return {
           type: 'phone',
-          reason: 'Compartir números de teléfono'
+          reason: 'Compartir números de teléfono',
+          context: 'regex'
         };
       }
     }
@@ -478,7 +608,8 @@ Si no hay información personal sensible, responde: {"isPersonalInfo": false, "t
       if (pattern.test(lowerMessage)) {
         return {
           type: 'social_media',
-          reason: 'Compartir usuarios de redes sociales'
+          reason: 'Compartir usuarios de redes sociales',
+          context: 'regex'
         };
       }
     }
@@ -488,7 +619,8 @@ Si no hay información personal sensible, responde: {"isPersonalInfo": false, "t
       if (pattern.test(lowerMessage)) {
         return {
           type: 'email',
-          reason: 'Compartir direcciones de correo electrónico'
+          reason: 'Compartir direcciones de correo electrónico',
+          context: 'regex'
         };
       }
     }

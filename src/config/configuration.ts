@@ -23,5 +23,9 @@ export default () => ({
     moderationOnlyMode: process.env.MODERATION_ONLY_MODE === 'true',
     sendModerationWarnings: process.env.SEND_MODERATION_WARNINGS !== 'false',
     personalInfoProtection: process.env.PERSONAL_INFO_PROTECTION !== 'false',
+    // Nuevos niveles de moderación
+    moderationLevel: process.env.MODERATION_LEVEL || 'STRICT', // STRICT, MODERATE, LENIENT
+    toxicityThreshold: parseFloat(process.env.TOXICITY_THRESHOLD || '0.7'), // 0.0 - 1.0
+    contextAwareness: process.env.CONTEXT_AWARENESS !== 'false',
   },
 });

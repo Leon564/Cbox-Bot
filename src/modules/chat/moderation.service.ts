@@ -16,6 +16,9 @@ export class ModerationService {
   private openai: OpenAI;
   private moderationEnabled: boolean;
   private personalInfoProtectionEnabled: boolean;
+  private moderationLevel: string;
+  private toxicityThreshold: number;
+  private contextAwareness: boolean;
   private userMessageHistory: Map<string, Array<{message: string, timestamp: number}>> = new Map();
   private readonly CONTEXT_WINDOW_MS = 60000; // 1 minuto para analizar contexto
   private readonly MAX_MESSAGES_TO_ANALYZE = 3; // Analizar últimos 3 mensajes del usuario
@@ -27,6 +30,15 @@ export class ModerationService {
     
     this.moderationEnabled = this.configService.get<boolean>('bot.moderationEnabled') ?? true;
     this.personalInfoProtectionEnabled = this.configService.get<boolean>('bot.personalInfoProtection') ?? true;
+    
+    // Nuevas configuraciones de niveles
+    this.moderationLevel = this.configService.get<string>('bot.moderationLevel') ?? 'STRICT';
+    this.toxicityThreshold = this.configService.get<number>('bot.toxicityThreshold') ?? 0.7;
+    this.contextAwareness = this.configService.get<boolean>('bot.contextAwareness') ?? true;
+    
+    console.log(`🛡️ Nivel de moderación: ${this.moderationLevel}`);
+    console.log(`🎯 Umbral de toxicidad: ${this.toxicityThreshold}`);
+    console.log(`🧠 Análisis contextual: ${this.contextAwareness ? 'ENABLED' : 'DISABLED'}`);
   }
 
   /**
@@ -104,35 +116,43 @@ export class ModerationService {
   }
 
   /**
-   * Construye el prompt de moderación según el nivel del usuario
+   * Construye el prompt de moderación según el nivel del usuario y configuración
    */
   private buildModerationPrompt(userLevel: number): string {
+    const levelConfig = this.getModerationConfig();
+    
     const baseRules = `
-Eres un moderador automático de un chat de anime/manga. Analiza el mensaje y determina si debe ser permitido.
+Eres un moderador automático de un chat de anime/manga con nivel de severidad: ${this.moderationLevel}.
 
-SOLO MODERA POR:
-1. ❌ Insultos directos, groserías o lenguaje ofensivo hacia usuarios
-2. ❌ Spam evidente (mensajes idénticos repetidos múltiples veces)
-3. ❌ Contenido sexual explícito
-4. ❌ Amenazas directas o incitación a la violencia
-5. ❌ Discriminación grave o hate speech
-6. ❌ Contenido claramente ilegal
+INFORMACIÓN PERSONAL (SIEMPRE ESTRICTO):
+❌ SIEMPRE ELIMINAR: Números de teléfono, emails, usuarios de redes sociales compartidos
+❌ NUNCA PERMITIR: Información personal sin importar el nivel de moderación
+
+TOXICIDAD Y CONTENIDO (VARIABLE POR NIVEL):
+${levelConfig.rules}
+
+CONTEXTO Y ANÁLISIS:
+${this.contextAwareness ? 
+  '✅ Considera el contexto, sarcasmo, bromas amigables y relaciones entre usuarios' : 
+  '❌ Análisis directo sin considerar contexto adicional'
+}
+
+UMBRAL DE TOXICIDAD: ${this.toxicityThreshold} (0.0 = muy permisivo, 1.0 = muy estricto)
 
 NO MODERES POR:
 1. ✅ Mensajes cortos o de pocas palabras
-2. ✅ Conversaciones que se salen del tema (anime/manga)
-3. ✅ Mensajes normales de conversación
-4. ✅ Bromas ligeras o comentarios casuales
+2. ✅ Conversaciones normales fuera del tema (anime/manga)
+3. ✅ Bromas ligeras entre amigos conocidos
+4. ✅ Expresiones emocionales normales
 5. ✅ Opiniones fuertes pero respetuosas
 6. ✅ Enlaces normales o recomendaciones
-7. ✅ Expresiones emocionales normales
-8. ✅ Apodos o nombres de usuario inofensivos (enana, gordo, etc.)
+7. ✅ Apodos cariñosos entre usuarios frecuentes
 
 NIVELES DE USUARIO:
-- Nivel 1: No registrado (moderación estricta)
-- Nivel 2: Registrado (moderación normal)  
-- Nivel 3: Moderador (moderación relajada)
-- Nivel 4: Admin (casi sin restricciones)`;
+- Nivel 1: No registrado (moderación ${levelConfig.userLevelModeration.level1})
+- Nivel 2: Registrado (moderación ${levelConfig.userLevelModeration.level2})
+- Nivel 3: Moderador (moderación ${levelConfig.userLevelModeration.level3})
+- Nivel 4: Admin (moderación ${levelConfig.userLevelModeration.level4})`;
 
     const levelSpecificRules = this.getLevelSpecificRules(userLevel);
 
@@ -143,26 +163,95 @@ ${levelSpecificRules}
 RESPONDE EN FORMATO JSON:
 {
   "allowed": true/false,
-  "severity": "low"/"medium"/"high",
+  "severity": "low"/"medium"/"high", 
   "reason": "explicación breve",
-  "category": "spam"/"nsfw"/"toxicity"/"offtopic"/"promotion"/"illegal",
-  "action": "allow"/"warn"/"timeout"/"ban"
+  "category": "spam"/"nsfw"/"toxicity"/"offtopic"/"promotion"/"illegal"/"personal_info",
+  "action": "allow"/"warn"/"timeout"/"ban",
+  "confidence": 0.0-1.0,
+  "context_considered": true/false
 }
 
-ACCIONES:
-- allow: Permitir el mensaje
-- warn: Solo advertencia (para casos menores)
-- timeout: Eliminar mensaje + advertencia (para insultos directos y spam)
-- ban: Eliminar mensaje + advertencia severa (para amenazas y discriminación)
+ACCIONES SEGÚN NIVEL:
+${levelConfig.actions}`;
+  }
 
-EJEMPLOS:
-- "Me gusta Naruto" → {"allowed": true, "severity": "low", "action": "allow"}
-- "hola" → {"allowed": true, "severity": "low", "action": "allow"}
-- "que aburrido esto" → {"allowed": true, "severity": "low", "action": "allow"}
-- "alguien ha visto la nueva película?" → {"allowed": true, "severity": "low", "action": "allow"}
-- "eres un idiota" → {"allowed": false, "severity": "medium", "reason": "Insulto directo", "category": "toxicity", "action": "timeout"}
-- "SPAM SPAM SPAM SPAM" → {"allowed": false, "severity": "high", "reason": "Spam evidente", "category": "spam", "action": "timeout"}
-- "voy a matarte" → {"allowed": false, "severity": "high", "reason": "Amenaza directa", "category": "toxicity", "action": "ban"}`;
+  /**
+   * Obtiene la configuración según el nivel de moderación
+   */
+  private getModerationConfig() {
+    switch (this.moderationLevel) {
+      case 'STRICT':
+        return {
+          rules: `
+❌ ELIMINAR: Cualquier insulto directo, groserías hacia usuarios, spam evidente
+❌ ELIMINAR: Contenido sexual explícito o referencias sexuales fuertes
+❌ ELIMINAR: Amenazas, discriminación, hate speech
+❌ ELIMINAR: Contenido claramente ilegal
+⚠️ ADVERTIR: Lenguaje fuerte ocasional, discusiones acaloradas`,
+          userLevelModeration: {
+            level1: 'muy estricta',
+            level2: 'estricta', 
+            level3: 'moderada',
+            level4: 'relajada'
+          },
+          actions: `
+- allow: Solo contenido completamente apropiado
+- warn: Lenguaje fuerte ocasional, discusiones menores
+- timeout: Insultos directos, spam, contenido sexual
+- ban: Amenazas, discriminación grave, contenido ilegal`
+        };
+        
+      case 'MODERATE':
+        return {
+          rules: `
+❌ ELIMINAR: Insultos directos maliciosos, groserías ofensivas repetidas
+❌ ELIMINAR: Contenido sexual explícito
+❌ ELIMINAR: Amenazas directas, discriminación seria
+❌ ELIMINAR: Spam masivo evidente
+✅ PERMITIR: Lenguaje fuerte ocasional, bromas pesadas entre amigos
+✅ PERMITIR: Discusiones acaloradas pero no ofensivas`,
+          userLevelModeration: {
+            level1: 'estricta',
+            level2: 'moderada',
+            level3: 'relajada', 
+            level4: 'mínima'
+          },
+          actions: `
+- allow: Contenido apropiado, lenguaje fuerte ocasional
+- warn: Discusiones acaloradas, lenguaje borderline
+- timeout: Insultos maliciosos, spam evidente
+- ban: Amenazas directas, discriminación seria`
+        };
+        
+      case 'LENIENT':
+        return {
+          rules: `
+❌ ELIMINAR SOLO: Insultos extremadamente ofensivos y maliciosos
+❌ ELIMINAR SOLO: Amenazas directas creíbles
+❌ ELIMINAR SOLO: Discriminación grave y hate speech
+❌ ELIMINAR SOLO: Contenido claramente ilegal
+✅ PERMITIR: Lenguaje fuerte, groserías generales
+✅ PERMITIR: Bromas pesadas, sarcasmo, ironía
+✅ PERMITIR: Discusiones acaloradas y debates intensos
+✅ PERMITIR: Contenido sexual no explícito (referencias, insinuaciones)`,
+          userLevelModeration: {
+            level1: 'moderada',
+            level2: 'relajada',
+            level3: 'mínima',
+            level4: 'casi nula'
+          },
+          actions: `
+- allow: Amplio rango de contenido, incluyendo lenguaje fuerte
+- warn: Solo contenido borderline muy serio
+- timeout: Insultos extremos, amenazas indirectas
+- ban: Solo amenazas directas, discriminación extrema`
+        };
+        
+      default:
+        // Fallback a STRICT si hay un valor inválido
+        this.moderationLevel = 'STRICT';
+        return this.getModerationConfig();
+    }
   }
 
   /**

@@ -44,9 +44,9 @@ export class ModerationService {
       };
     }
 
-    // PRIMERA VERIFICACIÓN: Detectar información personal sensible
+    // PRIMERA VERIFICACIÓN: Detectar información personal sensible usando GPT
     if (this.personalInfoProtectionEnabled) {
-      const personalInfoCheck = this.detectPersonalInformation(message);
+      const personalInfoCheck = await this.detectPersonalInformationWithGPT(message);
       if (personalInfoCheck) {
         console.log(`🚨 [PERSONAL-INFO] Información personal detectada de ${username}: ${personalInfoCheck.type}`);
         return {
@@ -361,7 +361,69 @@ EJEMPLOS:
   }
 
   /**
-   * Detecta información personal sensible en el mensaje
+   * Detecta información personal usando GPT para análisis más inteligente
+   */
+  private async detectPersonalInformationWithGPT(message: string): Promise<{ type: string; reason: string } | null> {
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Eres un detector de información personal sensible en mensajes de chat. Analiza si el mensaje contiene:
+
+1. NÚMEROS DE TELÉFONO (cualquier formato)
+2. CORREOS ELECTRÓNICOS 
+3. USUARIOS DE REDES SOCIALES compartidos con intención de contacto externo
+
+IMPORTANTE: 
+- @usuario en contexto de mención normal del chat = NO ES SPAM
+- "mi discord es @usuario" o "sígueme en @usuario" = SÍ ES SPAM
+- "búscame en instagram como @usuario" = SÍ ES SPAM
+- "hola @usuario" o "@usuario que tal" = NO ES SPAM (mención normal)
+
+Responde SOLO en formato JSON:
+{
+  "isPersonalInfo": true/false,
+  "type": "phone"/"email"/"social_media"/"none",
+  "reason": "explicación breve si es información personal"
+}
+
+Si no hay información personal sensible, responde: {"isPersonalInfo": false, "type": "none"}`
+          },
+          {
+            role: 'user',
+            content: `Analiza este mensaje: "${message}"`
+          }
+        ],
+        max_tokens: 150,
+        temperature: 0.1
+      });
+
+      const result = response.choices[0]?.message?.content?.trim();
+      if (!result) return null;
+
+      const parsed = JSON.parse(result);
+      
+      if (parsed.isPersonalInfo && parsed.type !== 'none') {
+        console.log(`🤖 [GPT-PERSONAL-INFO] Detectado: ${parsed.type} - ${parsed.reason}`);
+        return {
+          type: parsed.type,
+          reason: parsed.reason || 'Información personal detectada'
+        };
+      }
+
+      return null;
+      
+    } catch (error) {
+      console.error('❌ [GPT-PERSONAL-INFO] Error:', error);
+      // Fallback al método regex si GPT falla
+      return this.detectPersonalInformation(message);
+    }
+  }
+
+  /**
+   * Detecta información personal sensible en el mensaje (método de respaldo)
    */
   private detectPersonalInformation(message: string): { type: string; reason: string } | null {
     const lowerMessage = message.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -387,7 +449,7 @@ EJEMPLOS:
       /\b(twitter|x\.com)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
       /\b(facebook|fb)[\s:]*[@/]?([a-zA-Z0-9._]{3,50})\b/i,
       /\b(telegram|tg)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
-      /\b(discord)[\s:]*([\w.#]{3,50})\b/i,
+      /\b(discord)[\s:]*[@]?([\w.#@]{3,50})\b/i, // Agregado @ en el grupo de captura
       /\b(tiktok|tt)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,
       /\b(youtube|yt)[\s:]*[@/]?([a-zA-Z0-9._]{3,50})\b/i,
       /\b(snapchat|snap)[\s:]*[@]?([a-zA-Z0-9._]{3,30})\b/i,

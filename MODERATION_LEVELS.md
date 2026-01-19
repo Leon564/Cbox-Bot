@@ -69,6 +69,26 @@ TOXICITY_THRESHOLD = 0.3
 - Referencias sexuales no explícitas
 - Debates intensos
 
+### **4. PRIVACY_ONLY (Solo Privacidad)** ⭐ **NUEVO**
+```env
+MODERATION_LEVEL = PRIVACY_ONLY
+TOXICITY_THRESHOLD = 0.0  # No importa, no se usa
+```
+
+**❌ ELIMINA SOLO:**
+- Números de teléfono
+- Emails
+- Usuarios de redes sociales 
+- Información personal sensible
+- Spam fragmentado
+
+**✅ PERMITE TODO LO DEMÁS:**
+- Insultos y groserías
+- Contenido sexual
+- Spam conversacional
+- Debates acalorados
+- Cualquier lenguaje fuerte
+
 ## 🛡️ **Información Personal: Siempre Estricto**
 
 **INDEPENDIENTE DEL NIVEL:**
@@ -134,11 +154,11 @@ TOXICITY_THRESHOLD = 0.3
 CONTEXT_AWARENESS = true
 ```
 
-### **Solo Información Personal**
+### **Solo Información Personal** ⭐ **NUEVO**
 ```env
-MODERATION_LEVEL = LENIENT
+MODERATION_LEVEL = PRIVACY_ONLY
 TOXICITY_THRESHOLD = 0.0
-CONTEXT_AWARENESS = false
+CONTEXT_AWARENESS = true
 ```
 
 ## 📈 **Logs del Sistema**
@@ -165,12 +185,14 @@ Para cambiar la configuración:
 **STRICT**: ❌ Eliminado (insulto directo)
 **MODERATE**: ❌ Eliminado (insulto directo)  
 **LENIENT**: ⚠️ Advertencia o ✅ Permitido (según contexto)
+**PRIVACY_ONLY**: ✅ Permitido (no modera contenido)
 
 ### **Mensaje: "jajaja que pendejada"**
 
 **STRICT**: ❌ Eliminado (grosería)
 **MODERATE**: ✅ Permitido (lenguaje fuerte ocasional)
 **LENIENT**: ✅ Permitido (lenguaje general)
+**PRIVACY_ONLY**: ✅ Permitido (no modera contenido)
 
 ### **Mensaje: "mi discord es @usuario"**
 

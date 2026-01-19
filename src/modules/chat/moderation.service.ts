@@ -79,6 +79,16 @@ export class ModerationService {
       }
     }
 
+    // Si está en modo PRIVACY_ONLY, no moderar contenido, solo información personal
+    if (this.moderationLevel === 'PRIVACY_ONLY') {
+      console.log(`✅ [PRIVACY-ONLY] Mensaje permitido de ${username}: "${message}" (solo modo privacidad)`);
+      return {
+        isAllowed: true,
+        severity: 'low',
+        action: 'allow'
+      };
+    }
+
     try {
       console.log(`🛡️ [MOD] Moderando mensaje de ${username} (nivel ${userLevel}): "${message}"`);
 
@@ -245,6 +255,27 @@ ${levelConfig.actions}`;
 - warn: Solo contenido borderline muy serio
 - timeout: Insultos extremos, amenazas indirectas
 - ban: Solo amenazas directas, discriminación extrema`
+        };
+
+      case 'PRIVACY_ONLY':
+        return {
+          rules: `
+✅ PERMITIR TODO: Insultos, groserías, lenguaje fuerte, contenido sexual, debates
+✅ PERMITIR TODO: Spam, conversaciones off-topic, bromas pesadas
+✅ PERMITIR TODO: Cualquier tipo de contenido conversacional
+❌ ELIMINAR SOLO: Información personal (teléfonos, emails, redes sociales)
+🎯 MODO PRIVACIDAD: Solo protección de datos personales, sin moderación de contenido`,
+          userLevelModeration: {
+            level1: 'solo privacidad',
+            level2: 'solo privacidad',
+            level3: 'solo privacidad',
+            level4: 'solo privacidad'
+          },
+          actions: `
+- allow: TODO el contenido conversacional (insultos, groserías, etc.)
+- warn: NUNCA por contenido, solo por información personal
+- timeout: SOLO por compartir información personal
+- ban: SOLO por spam masivo de información personal`
         };
         
       default:

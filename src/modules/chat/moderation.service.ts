@@ -59,7 +59,39 @@ export class ModerationService {
       };
     }
 
-    // PRIMERA VERIFICACIÓN: Detectar información personal sensible usando GPT
+    // Si está en modo PRIVACY_ONLY, agregar al historial pero solo moderar información personal
+    if (this.moderationLevel === 'PRIVACY_ONLY') {
+      console.log(`🔒 [PRIVACY-ONLY] Modo solo privacidad activo - verificando información personal de ${username}: "${message}"`);
+      
+      if (this.personalInfoProtectionEnabled) {
+        // Agregar mensaje actual al historial del usuario
+        this.addToUserHistory(username, message);
+        
+        // Analizar mensaje actual y contexto reciente SOLO para información personal
+        const personalInfoCheck = await this.detectPersonalInformationWithContext(username, message);
+        if (personalInfoCheck) {
+          console.log(`🚨 [PRIVACY-ONLY] Información personal detectada de ${username}: ${personalInfoCheck.type} - ${personalInfoCheck.context || 'mensaje único'}`);
+          return {
+            isAllowed: false,
+            severity: 'high',
+            reason: personalInfoCheck.reason,
+            category: 'personal_information',
+            action: 'timeout',
+            isPersonalInfo: true
+          };
+        }
+      }
+      
+      // En modo PRIVACY_ONLY: Si no hay información personal, SIEMPRE permitir (sin moderar contenido)
+      console.log(`✅ [PRIVACY-ONLY] Mensaje permitido de ${username}: "${message}" (sin información personal detectada)`);
+      return {
+        isAllowed: true,
+        severity: 'low',
+        action: 'allow'
+      };
+    }
+
+    // PARA OTROS MODOS (STRICT/MODERATE/LENIENT): Verificar información personal primero
     if (this.personalInfoProtectionEnabled) {
       // Agregar mensaje actual al historial del usuario
       this.addToUserHistory(username, message);
@@ -77,16 +109,6 @@ export class ModerationService {
           isPersonalInfo: true
         };
       }
-    }
-
-    // Si está en modo PRIVACY_ONLY, no moderar contenido, solo información personal
-    if (this.moderationLevel === 'PRIVACY_ONLY') {
-      console.log(`✅ [PRIVACY-ONLY] Mensaje permitido de ${username}: "${message}" (solo modo privacidad)`);
-      return {
-        isAllowed: true,
-        severity: 'low',
-        action: 'allow'
-      };
     }
 
     try {

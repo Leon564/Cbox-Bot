@@ -29,4 +29,11 @@ export default () => ({
     youtubeCookiesPath: process.env.YOUTUBE_COOKIES_PATH,
     maxDurationMinutes: parseInt(process.env.MAX_SONG_DURATION || '8', 10),
   },
+
+  // Image Generation Configuration
+  image: {
+    model: process.env.IMAGE_MODEL || 'dall-e-3',
+    size: process.env.IMAGE_SIZE || '1024x1024',
+    quality: process.env.IMAGE_QUALITY || 'standard',
+  },
 });

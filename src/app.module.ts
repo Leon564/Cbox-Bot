@@ -5,6 +5,7 @@ import { BotModule } from './modules/bot/bot.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { MusicModule } from './modules/music/music.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ImageModule } from './modules/image/image.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -19,6 +20,7 @@ import configuration from './config/configuration';
     ChatModule,
     MusicModule,
     AuthModule,
+    ImageModule,
   ],
 })
 export class AppModule {}

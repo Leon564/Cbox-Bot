@@ -7,6 +7,7 @@ import { ChatService } from '../chat/chat.service';
 import { MessagesService } from '../chat/messages.service';
 import { OnlineUsersService } from '../chat/online-users.service';
 import { MusicService } from '../music/music.service';
+import { ImageService } from '../image/image.service';
 import { UtilsService } from '../../common/utils/utils.service';
 import { LoggingService } from '../../common/utils/logging.service';
 import { MemoryService } from '../../common/utils/memory.service';
@@ -27,6 +28,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly messagesService: MessagesService,
     private readonly onlineUsersService: OnlineUsersService,
     private readonly musicService: MusicService,
+    private readonly imageService: ImageService,
     private readonly utilsService: UtilsService,
     private readonly loggingService: LoggingService,
     private readonly memoryService: MemoryService,
@@ -175,13 +177,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     // Verificar primero si es solicitud de música
     const isMusicRequest = message ? MusicService.isMusicRequest(message) : false;
     
+    // Verificar si es solicitud de generación de imagen
+    const isImageRequest = message ? ImageService.isImageRequest(message) : false;
+
     // Verificar si es solicitud de usuarios en línea
     const isOnlineUsersRequest = message ? this.isOnlineUsersRequest(message) : false;
     
     if (
       !message ||
       name === this.session.uname ||
-      (!containsBotWord(message) && !containsExactBotName(message, this.session.uname) && !isMusicRequest && !isOnlineUsersRequest)
+      (!containsBotWord(message) && !containsExactBotName(message, this.session.uname) && !isMusicRequest && !isOnlineUsersRequest && !isImageRequest)
     )
       return;
 
@@ -196,6 +201,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     
     if (isMusicRequest) {
       await this.handleMusicRequest(message, name, colorPrefix);
+      return;
+    }
+
+    // Verificar si es una solicitud de imagen
+    console.log(`🔍 Verificando si "${message}" es solicitud de imagen...`);
+    console.log(`🔍 Resultado detección imagen: ${isImageRequest}`);
+
+    if (isImageRequest) {
+      await this.handleImageRequest(message, name, colorPrefix);
       return;
     }
 
@@ -310,11 +324,103 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async handleImageRequest(message: string, name: string, colorPrefix: string): Promise<void> {
+    console.log(`🎨 Solicitud de imagen detectada de ${name}: "${message}"`);
+
+    try {
+      const prompt = ImageService.extractImagePrompt(message);
+      console.log(`🎨 Prompt extraído: "${prompt}"`);
+
+      if (!prompt || prompt.trim().length < 3) {
+        const errorResponse = {
+          message: `${colorPrefix}<@${name}> ❌ No pude entender qué imagen quieres generar. Intenta con: "!image [descripción]" o "genera una imagen de [descripción]"`,
+          username: this.session.uname,
+          key: this.session.ukey,
+          pic: this.session.pic,
+          boxTag: this.session.boxTag,
+          boxId: this.session.boxId,
+          iframeUrl: this.session.iframeUrl,
+        };
+        await this.sendMessageWithSessionCheck(errorResponse);
+        return;
+      }
+
+      // Mensaje de confirmación
+      const confirmResponse = {
+        message: `${colorPrefix}<@${name}> 🎨 Generando imagen de "${prompt}"... Esto puede tomar unos segundos.`,
+        username: this.session.uname,
+        key: this.session.ukey,
+        pic: this.session.pic,
+        boxTag: this.session.boxTag,
+        boxId: this.session.boxId,
+        iframeUrl: this.session.iframeUrl,
+      };
+      await this.sendMessageWithSessionCheck(confirmResponse);
+
+      // Procesar de forma asíncrona
+      this.imageService.generateImage(prompt, name)
+        .then(async (result) => {
+          console.log(`✅ Imagen generada exitosamente para ${name}`);
+          const responseDelay = this.configService.get<number>('bot.responseDelay') || 1000;
+          await this.utilsService.sleep(responseDelay);
+          await this.sendMessageWithSessionCheck({
+            message: `${colorPrefix}${result}`,
+            username: this.session.uname,
+            key: this.session.ukey,
+            pic: this.session.pic,
+            boxTag: this.session.boxTag,
+            boxId: this.session.boxId,
+            iframeUrl: this.session.iframeUrl,
+          });
+        })
+        .catch(async (error) => {
+          console.error(`❌ Error generando imagen:`, error);
+          const responseDelay = this.configService.get<number>('bot.responseDelay') || 1000;
+          await this.utilsService.sleep(responseDelay);
+          await this.sendMessageWithSessionCheck({
+            message: `${colorPrefix}<@${name}> ❌ ${error.message}`,
+            username: this.session.uname,
+            key: this.session.ukey,
+            pic: this.session.pic,
+            boxTag: this.session.boxTag,
+            boxId: this.session.boxId,
+            iframeUrl: this.session.iframeUrl,
+          });
+        });
+
+    } catch (error) {
+      console.error(`❌ Error procesando solicitud de imagen:`, error);
+      await this.sendMessageWithSessionCheck({
+        message: `${colorPrefix}<@${name}> ❌ Error interno al procesar la imagen. Intenta más tarde.`,
+        username: this.session.uname,
+        key: this.session.ukey,
+        pic: this.session.pic,
+        boxTag: this.session.boxTag,
+        boxId: this.session.boxId,
+        iframeUrl: this.session.iframeUrl,
+      });
+    }
+  }
+
   private async handleDebugCommands(message: string, name: string, colorPrefix: string): Promise<void> {
     if (message.toLowerCase().includes('music')) {
       const queueStatus = this.musicService.getQueueStatus();
       const debugResponse = {
         message: `${colorPrefix}<@${name}> Música: Procesando=${queueStatus.isProcessing}, Cola=${queueStatus.queueLength} 🎵`,
+        username: this.session.uname,
+        key: this.session.ukey,
+        pic: this.session.pic,
+        boxTag: this.session.boxTag,
+        boxId: this.session.boxId,
+        iframeUrl: this.session.iframeUrl,
+      };
+      await this.sendMessageWithSessionCheck(debugResponse);
+    }
+
+    if (message.toLowerCase().includes('image') || message.toLowerCase().includes('imagen')) {
+      const imageStatus = this.imageService.getQueueStatus();
+      const debugResponse = {
+        message: `${colorPrefix}<@${name}> Imágenes: Procesando=${imageStatus.isProcessing}, Cola=${imageStatus.queueLength} 🎨`,
         username: this.session.uname,
         key: this.session.ukey,
         pic: this.session.pic,

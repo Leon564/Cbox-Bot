@@ -372,7 +372,7 @@ EJEMPLOS DE MENSAJES QUE NO SON COMANDOS:
 Analiza: "${message}"`;
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: this.configService.get<string>('openai.model') || 'gpt-3.5-turbo',
         messages: [{ role: 'system', content: systemPrompt }],
         max_tokens: 150,
         temperature: 0.1,
